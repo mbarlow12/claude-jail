@@ -64,6 +64,7 @@ claude-jail-debug               # Print bwrap command
 |---------|-----------|-------|----------|
 | `minimal` | Basic | Fast | Trusted code, quick iterations |
 | `standard` | Balanced | Medium | Daily use (default) |
+| `dev` | Balanced | Medium | Development with version managers (mise, cargo, nvm, etc.) |
 | `paranoid` | Maximum | Slower | Untrusted code, security research |
 
 ### Profile Details
@@ -79,6 +80,12 @@ claude-jail-debug               # Print bwrap command
 - Selective `/etc` (only dns, ssl, passwd)
 - Preserves your `$PATH`
 - Binds all PATH directories read-only
+
+**dev**
+
+- Same isolation as standard
+- Binds version manager directories read-only: mise, cargo, rustup, nvm, pyenv, uv, volta, bun, go
+- Best for projects using language version managers
 
 **paranoid**
 
@@ -100,7 +107,7 @@ zstyle ':claude-jail:*' network false
 # Custom sandbox directory name
 zstyle ':claude-jail:*' sandbox-home .sandbox
 
-# Don't copy ~/.claude config
+# Don't copy ~/.claude config (credentials are always bind-mounted)
 zstyle ':claude-jail:*' copy-claude-config false
 
 # Add extra read-only paths
@@ -122,6 +129,7 @@ claude-jail/
 └── profiles/
     ├── minimal.zsh           # Fast, basic isolation
     ├── standard.zsh          # Balanced (default)
+    ├── dev.zsh               # Developer toolchains
     └── paranoid.zsh          # Maximum isolation
 ```
 
@@ -198,11 +206,17 @@ echo 'kernel.unprivileged_userns_clone=1' | sudo tee /etc/sysctl.d/userns.conf
 
 ### Claude can't authenticate
 
-Config is copied on first run. To refresh:
+Credentials (`~/.claude/.credentials.json`) are bind-mounted into the sandbox, so authentication should work automatically. If you have issues:
 
 ```bash
-claude-jail-clean
-# Config will be re-copied on next run
+# Verify credentials exist
+ls -la ~/.claude/.credentials.json
+
+# If missing, run claude outside the sandbox first to login
+claude
+
+# Then try claude-jail again
+claude-jail
 ```
 
 ### Debug the sandbox
