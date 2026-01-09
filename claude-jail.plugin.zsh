@@ -21,7 +21,8 @@ claude-jail() {
     local verbose=false
     local dry_run=false
     local network=""
-    local -a extra_args=()
+    local -a cli_ro=()
+    local -a cli_rw=()
     local -a claude_args=()
     
     while [[ $# -gt 0 ]]; do
@@ -31,6 +32,8 @@ claude-jail() {
             -v|--verbose)   verbose=true; shift ;;
             --no-network)   network=false; shift ;;
             --network)      network=true; shift ;;
+            --ro)           cli_ro+=("$2"); shift 2 ;;
+            --rw)           cli_rw+=("$2"); shift 2 ;;
             -h|--help)      _claude_jail_help; return 0 ;;
             --list-profiles) cj::profile::list; return 0 ;;
             --show-config)  cj::config::show; return 0 ;;
@@ -77,12 +80,16 @@ claude-jail() {
     cj::worktree::detect_config "$project_dir" "$verbose"
 
     # Bind-mount credentials for live sync (allows /login to persist)
-    if [[ -f ~/.claude/.credentials.json ]]; then
+    local cred_source
+    if cred_source="$(cj::credentials::find)"; then
         local cred_target="$sandbox_home/.claude/.credentials.json"
         [[ "$profile" == "paranoid" ]] && cred_target="/sandbox/.claude/.credentials.json"
         touch "$sandbox_home/.claude/.credentials.json"
-        cj::bind ~/.claude/.credentials.json "$cred_target"
+        cj::bind "$cred_source" "$cred_target"
     fi
+
+    # Pass through environment variables (git, proxy, API key)
+    cj::env::passthrough
 
     if [[ "$network" == "false" ]]; then
         _CJ_NS+=(--unshare-net)
@@ -90,12 +97,20 @@ claude-jail() {
     
     local -a extra_ro=($(cj::config::get 'paths' extra-ro))
     local -a extra_rw=($(cj::config::get 'paths' extra-rw))
-    
+
     local p
     for p in "${extra_ro[@]}"; do
         [[ -n "$p" && -e "$p" ]] && cj::ro_bind "$p"
     done
     for p in "${extra_rw[@]}"; do
+        [[ -n "$p" && -e "$p" ]] && cj::bind "$p"
+    done
+
+    # CLI path options (--ro, --rw)
+    for p in "${cli_ro[@]}"; do
+        [[ -n "$p" && -e "$p" ]] && cj::ro_bind "$p"
+    done
+    for p in "${cli_rw[@]}"; do
         [[ -n "$p" && -e "$p" ]] && cj::bind "$p"
     done
     
@@ -134,16 +149,19 @@ claude-jail-shell() {
     cj::profile::apply "$profile" "$project_dir" "$sandbox_home"
 
     # Bind-mount credentials for live sync
-    if [[ -f ~/.claude/.credentials.json ]]; then
+    local cred_source
+    if cred_source="$(cj::credentials::find)"; then
         local cred_target="$sandbox_home/.claude/.credentials.json"
         [[ "$profile" == "paranoid" ]] && cred_target="/sandbox/.claude/.credentials.json"
         touch "$sandbox_home/.claude/.credentials.json"
-        cj::bind ~/.claude/.credentials.json "$cred_target"
+        cj::bind "$cred_source" "$cred_target"
     fi
+
+    cj::env::passthrough
 
     local chdir_path="$project_dir"
     [[ "$profile" == "paranoid" ]] && chdir_path="/work"
-    
+
     echo "🔒 Entering sandbox shell (profile: $profile)"
     echo "   \$HOME = $sandbox_home"
     echo "   Try: ls /home  (should fail)"
@@ -181,14 +199,16 @@ claude-jail-debug() {
     cj::worktree::detect_config "$project_dir" false
 
     # Bind-mount credentials for live sync
-    if [[ -f ~/.claude/.credentials.json ]]; then
+    local cred_source
+    if cred_source="$(cj::credentials::find)"; then
         local cred_target="$sandbox_home/.claude/.credentials.json"
         [[ "$profile" == "paranoid" ]] && cred_target="/sandbox/.claude/.credentials.json"
-        cj::bind ~/.claude/.credentials.json "$cred_target"
+        cj::bind "$cred_source" "$cred_target"
     fi
 
+    cj::env::passthrough
     cj::chdir "$chdir_path"
-    
+
     echo "# Profile: $profile"
     echo "# Project: $project_dir"
     echo "# Sandbox: $sandbox_home"
@@ -219,6 +239,8 @@ OPTIONS
     -v, --verbose         Show sandbox info on start
     --network             Force enable network
     --no-network          Disable network access
+    --ro <PATH>           Add read-only path (can repeat)
+    --rw <PATH>           Add read-write path (can repeat)
     --list-profiles       List available profiles
     --show-config         Show current configuration
     -h, --help            Show this help
@@ -276,6 +298,8 @@ if [[ -n "$ZSH_VERSION" ]]; then
             '--verbose[Verbose output]' \
             '--network[Enable network]' \
             '--no-network[Disable network]' \
+            '*--ro[Read-only path]:path:_files -/' \
+            '*--rw[Read-write path]:path:_files -/' \
             '--list-profiles[List profiles]' \
             '--show-config[Show configuration]' \
             '-h[Show help]' \

@@ -240,9 +240,9 @@ echo $HOME        # Shows sandbox path
 
 ## Credits
 
+- [cco](https://github.com/nikvdp/cco) - Environment passthrough patterns, XDG config detection
 - [mfmayer's gist](https://gist.github.com/mfmayer/baf38e88d9e13d28f9484b546ede4bbd) - Modular bwrap approach
 - [akashakya's HN comment](https://news.ycombinator.com/item?id=45429787) - Minimal bwrap example
-- [Simon Willison's article](https://simonwillison.net/2025/Sep/30/designing-agentic-loops/) - Agentic loop design
 
 ## License
 

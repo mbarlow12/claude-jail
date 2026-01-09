@@ -234,3 +234,40 @@ cj::run() {
     cmd+=(-- "$@")
     "${cmd[@]}"
 }
+
+cj::env::passthrough() {
+    # Git identity
+    [[ -n "$GIT_AUTHOR_NAME" ]] && cj::setenv GIT_AUTHOR_NAME "$GIT_AUTHOR_NAME"
+    [[ -n "$GIT_AUTHOR_EMAIL" ]] && cj::setenv GIT_AUTHOR_EMAIL "$GIT_AUTHOR_EMAIL"
+    [[ -n "$GIT_COMMITTER_NAME" ]] && cj::setenv GIT_COMMITTER_NAME "$GIT_COMMITTER_NAME"
+    [[ -n "$GIT_COMMITTER_EMAIL" ]] && cj::setenv GIT_COMMITTER_EMAIL "$GIT_COMMITTER_EMAIL"
+
+    # Proxy settings
+    [[ -n "$http_proxy" ]] && cj::setenv http_proxy "$http_proxy"
+    [[ -n "$https_proxy" ]] && cj::setenv https_proxy "$https_proxy"
+    [[ -n "$HTTP_PROXY" ]] && cj::setenv HTTP_PROXY "$HTTP_PROXY"
+    [[ -n "$HTTPS_PROXY" ]] && cj::setenv HTTPS_PROXY "$HTTPS_PROXY"
+    [[ -n "$no_proxy" ]] && cj::setenv no_proxy "$no_proxy"
+    [[ -n "$NO_PROXY" ]] && cj::setenv NO_PROXY "$NO_PROXY"
+
+    # API key for direct API users
+    [[ -n "$ANTHROPIC_API_KEY" ]] && cj::setenv ANTHROPIC_API_KEY "$ANTHROPIC_API_KEY"
+
+    # Timezone
+    [[ -n "$TZ" ]] && cj::setenv TZ "$TZ"
+}
+
+cj::credentials::find() {
+    local cred_file dir
+    # Check in order of precedence
+    for dir in \
+        "${CLAUDE_CONFIG_DIR:-}" \
+        "${XDG_CONFIG_HOME:-$HOME/.config}/claude" \
+        "$HOME/.claude"
+    do
+        [[ -z "$dir" ]] && continue
+        cred_file="$dir/.credentials.json"
+        [[ -f "$cred_file" ]] && { echo "$cred_file"; return 0; }
+    done
+    return 1
+}
