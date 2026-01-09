@@ -75,7 +75,15 @@ claude-jail() {
     cj::profile::apply "$profile" "$project_dir" "$sandbox_home"
     
     cj::worktree::detect_config "$project_dir" "$verbose"
-    
+
+    # Bind-mount credentials for live sync (allows /login to persist)
+    if [[ -f ~/.claude/.credentials.json ]]; then
+        local cred_target="$sandbox_home/.claude/.credentials.json"
+        [[ "$profile" == "paranoid" ]] && cred_target="/sandbox/.claude/.credentials.json"
+        touch "$sandbox_home/.claude/.credentials.json"
+        cj::bind ~/.claude/.credentials.json "$cred_target"
+    fi
+
     if [[ "$network" == "false" ]]; then
         _CJ_NS+=(--unshare-net)
     fi
@@ -116,15 +124,23 @@ claude-jail() {
 claude-jail-shell() {
     local project_dir="${1:-$(pwd)}"
     local profile="${2:-$(cj::config::get '*' profile standard)}"
-    
+
     project_dir="$(realpath "$project_dir" 2>/dev/null || echo "$project_dir")"
     local sandbox_home="$project_dir/$(cj::config::get '*' sandbox-home .claude-sandbox)"
-    
-    mkdir -p "$sandbox_home"
-    
+
+    mkdir -p "$sandbox_home/.claude"
+
     cj::reset
     cj::profile::apply "$profile" "$project_dir" "$sandbox_home"
-    
+
+    # Bind-mount credentials for live sync
+    if [[ -f ~/.claude/.credentials.json ]]; then
+        local cred_target="$sandbox_home/.claude/.credentials.json"
+        [[ "$profile" == "paranoid" ]] && cred_target="/sandbox/.claude/.credentials.json"
+        touch "$sandbox_home/.claude/.credentials.json"
+        cj::bind ~/.claude/.credentials.json "$cred_target"
+    fi
+
     local chdir_path="$project_dir"
     [[ "$profile" == "paranoid" ]] && chdir_path="/work"
     
@@ -153,16 +169,24 @@ claude-jail-clean() {
 claude-jail-debug() {
     local project_dir="${1:-$(pwd)}"
     local profile="${2:-$(cj::config::get '*' profile standard)}"
-    
+
     project_dir="$(realpath "$project_dir" 2>/dev/null || echo "$project_dir")"
     local sandbox_home="$project_dir/$(cj::config::get '*' sandbox-home .claude-sandbox)"
-    
+
     local chdir_path="$project_dir"
     [[ "$profile" == "paranoid" ]] && chdir_path="/work"
-    
+
     cj::reset
     cj::profile::apply "$profile" "$project_dir" "$sandbox_home"
     cj::worktree::detect_config "$project_dir" false
+
+    # Bind-mount credentials for live sync
+    if [[ -f ~/.claude/.credentials.json ]]; then
+        local cred_target="$sandbox_home/.claude/.credentials.json"
+        [[ "$profile" == "paranoid" ]] && cred_target="/sandbox/.claude/.credentials.json"
+        cj::bind ~/.claude/.credentials.json "$cred_target"
+    fi
+
     cj::chdir "$chdir_path"
     
     echo "# Profile: $profile"
