@@ -187,7 +187,8 @@ cj::path::find_real() {
 
 cj::worktree::detect_config() {
     local project_dir="$1"
-    local parent="$(dirname "$project_dir")"
+    local parent
+    parent="$(dirname "$project_dir")"
     local verbose="${2:-false}"
 
     [[ -z "$project_dir" ]] && return 1
