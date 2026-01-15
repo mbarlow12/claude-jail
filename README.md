@@ -39,9 +39,6 @@ sudo dnf install bubblewrap
 git clone https://github.com/mbarlow12/claude-jail.git
 cd claude-jail
 
-# Initialize test submodules (optional, for running tests)
-git submodule update --init --recursive
-
 # Add to PATH (add to your shell's rc file)
 export PATH="$PATH:/path/to/claude-jail/bin"
 ```
@@ -170,78 +167,7 @@ zstyle ':claude-jail:paths' extra-rw ~/scratch
 3. Config file (`.claude-jail.conf`, `~/.config/claude-jail/config`)
 4. Built-in defaults
 
-## Development Setup
-
-### Dependencies
-
-For development and testing, install these additional packages:
-
-```bash
-# Debian/Ubuntu
-sudo apt-get update
-sudo apt-get install -y bubblewrap rsync shellcheck
-
-# Arch
-sudo pacman -S bubblewrap rsync shellcheck
-
-# Fedora
-sudo dnf install bubblewrap rsync ShellCheck
-```
-
-### Initialize Test Framework
-
-The test suite uses [bats-core](https://github.com/bats-core/bats-core) with support and assert libraries as git submodules:
-
-```bash
-# Clone with submodules
-git clone --recurse-submodules https://github.com/mbarlow12/claude-jail.git
-
-# Or initialize submodules in existing clone
-git submodule update --init --recursive
-```
-
-### Running Tests
-
-```bash
-# Run all tests
-./tests/run_tests.sh
-
-# Run only unit tests
-./tests/run_tests.sh unit
-
-# Run only integration tests
-./tests/run_tests.sh integration
-
-# Run a specific test file
-./tests/run_tests.sh tests/unit/bwrap.bats
-```
-
-### Linting
-
-```bash
-# Run ShellCheck on all source files
-shellcheck lib/*.sh bin/claude-jail profiles/*.sh
-```
-
-## Testing
-
-### Automated Tests
-
-```bash
-# Initialize test submodules (first time only)
-git submodule update --init --recursive
-
-# Run all tests
-./tests/run_tests.sh
-
-# Run only unit tests
-./tests/run_tests.sh unit
-
-# Run only integration tests
-./tests/run_tests.sh integration
-```
-
-### Manual Testing
+## Testing the Sandbox
 
 ```bash
 # See what bwrap command would run
@@ -269,85 +195,9 @@ claude-jail/
 │   ├── standard.sh           # Balanced (default)
 │   ├── dev.sh                # Developer toolchains
 │   └── paranoid.sh           # Maximum isolation
-├── tests/
-│   ├── unit/                 # Unit tests for lib/*.sh
-│   ├── integration/          # CLI and profile tests
-│   └── run_tests.sh          # Test runner
+├── tests/                    # Automated tests (bats-core)
 └── claude-jail.plugin.zsh    # Zsh plugin (thin wrapper)
 ```
-
-### Extending
-
-Create custom profiles in `profiles/`:
-
-```bash
-#!/usr/bin/env bash
-# profiles/custom.sh
-
-_cj_profile_custom() {
-    local project_dir="$1"
-    local sandbox_home="$2"
-
-    cj::unshare user pid
-    cj::system::base
-    cj::system::dns
-    cj::system::ssl
-    cj::proc
-    cj::dev
-    cj::tmpfs /tmp
-
-    cj::bind "$project_dir"
-    cj::bind "$sandbox_home"
-
-    # Your custom mounts
-    cj::ro_bind ~/my-tools
-
-    cj::setenv HOME "$sandbox_home"
-    cj::setenv PATH "$PATH"
-}
-
-cj::profile::register custom _cj_profile_custom
-```
-
-**Note**: Use pure bash syntax only. Avoid zsh-specific features.
-
-## API Reference
-
-### Core Functions (`lib/bwrap.sh`)
-
-| Function | Description |
-|----------|-------------|
-| `cj::reset` | Clear all accumulated bwrap args |
-| `cj::ro_bind <src> [dst]` | Read-only bind mount |
-| `cj::bind <src> [dst]` | Read-write bind mount |
-| `cj::tmpfs <path>` | Mount tmpfs |
-| `cj::symlink <target> <link>` | Create symlink |
-| `cj::proc [path]` | Mount /proc |
-| `cj::dev [path]` | Mount /dev |
-| `cj::setenv <name> <value>` | Set environment variable |
-| `cj::unshare <ns...>` | Unshare namespaces (user, pid, net, ipc, uts, cgroup, all) |
-| `cj::share <ns...>` | Share namespaces (net) |
-| `cj::run <cmd...>` | Execute command in sandbox |
-
-### System Helpers
-
-| Function | Description |
-|----------|-------------|
-| `cj::system::base` | Bind /usr, /bin, /lib, /lib64 |
-| `cj::system::dns` | Bind DNS config files |
-| `cj::system::ssl` | Bind SSL certificates |
-| `cj::system::users` | Bind passwd, group, localtime |
-| `cj::path::bind_all` | Bind all directories in $PATH |
-| `cj::path::find_real <name>` | Find and bind executable |
-
-### Sandbox Helpers (`lib/sandbox.sh`)
-
-| Function | Description |
-|----------|-------------|
-| `cj::sandbox::create_dirs <home>` | Create sandbox directory structure |
-| `cj::sandbox::copy_claude_config <home>` | Copy ~/.claude to sandbox |
-| `cj::sandbox::bind_credentials <home> <profile>` | Bind credentials for live sync |
-| `cj::sandbox::init <project> <home> <profile>` | Full sandbox initialization |
 
 ## Troubleshooting
 
@@ -393,6 +243,10 @@ echo $HOME        # Shows sandbox path
 - The sandbox protects against accidental damage, not determined attackers
 - For higher security, use `--no-network` or run in a VM
 - Consider [cco](https://github.com/nikvdp/cco) or Docker for additional isolation
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, creating custom profiles, and API reference.
 
 ## Credits
 
