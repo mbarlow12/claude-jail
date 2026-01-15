@@ -220,3 +220,29 @@ cj::profile::register myprofile _cj_profile_myprofile
 | `cj::sandbox::home_path <home> <profile>` | Get HOME path for profile display |
 | `cj::sandbox::print_info <...>` | Print verbose startup information |
 | `cj::sandbox::print_shell_info <home> <profile>` | Print shell entry information |
+
+## Development Setup (for Claude Code Web Sessions)
+
+When starting a new development session, run these commands to set up the environment:
+
+```bash
+# Install dependencies (Debian/Ubuntu)
+sudo apt-get update
+sudo apt-get install -y bubblewrap rsync shellcheck
+
+# Initialize test submodules
+git submodule update --init --recursive
+
+# Verify setup by running tests
+./tests/run_tests.sh
+```
+
+### CI/CD Integration
+
+The project uses GitHub Actions for automated testing. The workflow:
+- Runs on push to main/master and on PRs
+- Installs bubblewrap and rsync
+- Runs unit and integration tests separately
+- Runs ShellCheck on all shell scripts
+
+See `.github/workflows/test.yml` for the full configuration.
