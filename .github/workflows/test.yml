@@ -1,0 +1,59 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap rsync
+
+      - name: Make test runner executable
+        run: chmod +x tests/run_tests.sh
+
+      - name: Run unit tests
+        run: ./tests/run_tests.sh unit
+
+      - name: Run integration tests
+        run: ./tests/run_tests.sh integration
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck on lib files
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './lib'
+          severity: warning
+
+      - name: Run ShellCheck on bin files
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './bin'
+          severity: warning
+
+      - name: Run ShellCheck on profiles
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './profiles'
+          severity: warning
