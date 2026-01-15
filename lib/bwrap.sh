@@ -260,6 +260,9 @@ cj::env::passthrough() {
 
     # Timezone
     [[ -n "${TZ:-}" ]] && cj::setenv TZ "$TZ"
+
+    # Always return success (conditionals above may be false)
+    return 0
 }
 
 cj::credentials::find() {

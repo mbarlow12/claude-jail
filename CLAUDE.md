@@ -18,11 +18,16 @@ lib/
   bwrap.sh                 # Core bwrap primitives (pure bash)
   config.sh                # Environment + config file based configuration
   profiles.sh              # Profile registration and loading (pure bash)
+  sandbox.sh               # Sandbox setup utilities (pure bash)
 profiles/
   minimal.sh               # Basic isolation, mounts /etc read-only
   standard.sh              # Balanced (default) - selective /etc, preserves PATH
   paranoid.sh              # Maximum isolation - remaps paths to /work and /sandbox
   dev.sh                   # Toolchain-aware - binds mise, cargo, nvm, etc.
+tests/
+  test_helper/             # Bats-core framework and helpers
+  unit/                    # Unit tests for lib/*.sh
+  integration/             # Integration tests for CLI and profiles
 claude-jail.plugin.zsh     # Optional: Zsh plugin (thin wrapper + completion)
 ```
 
@@ -100,7 +105,33 @@ export CJ_NETWORK=false
 claude-jail -d ~/project
 ```
 
-## Testing Changes
+## Testing
+
+### Automated Tests (bats-core)
+
+```bash
+# Initialize test submodules (first time only)
+git submodule update --init --recursive
+
+# Run all tests
+./tests/run_tests.sh
+
+# Run only unit tests
+./tests/run_tests.sh unit
+
+# Run only integration tests
+./tests/run_tests.sh integration
+
+# Run a specific test file
+./tests/run_tests.sh tests/unit/bwrap.bats
+```
+
+Test structure:
+- `tests/unit/` - Unit tests for each lib/*.sh module
+- `tests/integration/` - CLI and profile integration tests
+- `tests/test_helper/common.bash` - Shared test utilities
+
+### Manual Testing
 
 ```bash
 # Debug: print bwrap command without running
@@ -176,3 +207,16 @@ cj::profile::register myprofile _cj_profile_myprofile
 | `cj::system::dns` | Bind DNS config files |
 | `cj::system::ssl` | Bind SSL certificates |
 | `cj::path::bind_all` | Bind all directories in $PATH |
+
+## Sandbox API (lib/sandbox.sh)
+
+| Function | Purpose |
+|----------|---------|
+| `cj::sandbox::create_dirs <home>` | Create standard sandbox directory structure |
+| `cj::sandbox::copy_claude_config <home>` | Copy ~/.claude to sandbox (if enabled) |
+| `cj::sandbox::bind_credentials <home> <profile>` | Bind credentials file for live sync |
+| `cj::sandbox::init <project> <home> <profile>` | Full sandbox initialization |
+| `cj::sandbox::chdir_path <project> <profile>` | Get working directory path for profile |
+| `cj::sandbox::home_path <home> <profile>` | Get HOME path for profile display |
+| `cj::sandbox::print_info <...>` | Print verbose startup information |
+| `cj::sandbox::print_shell_info <home> <profile>` | Print shell entry information |
