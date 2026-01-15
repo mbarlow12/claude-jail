@@ -43,6 +43,7 @@ cj::profile::load_all() {
 
     for f in "$profile_dir"/*.sh; do
         [[ ! -f "$f" ]] && continue
+        # shellcheck disable=SC1090
         source "$f"
     done
 }

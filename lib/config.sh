@@ -29,12 +29,14 @@ cj::config::_load_file() {
     [[ ! -f "$config_file" ]] && return 1
 
     # Source the config file in a subshell to validate syntax
+    # shellcheck disable=SC1090
     if ! ( source "$config_file" ) &>/dev/null; then
         echo "Warning: Failed to parse config file: $config_file" >&2
         return 1
     fi
 
     # Source the config file to load variables
+    # shellcheck disable=SC1090
     source "$config_file"
     return 0
 }

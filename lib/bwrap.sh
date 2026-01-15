@@ -163,14 +163,14 @@ cj::system::users() {
 }
 
 cj::system::run() {
-    [[ -d /run/user/$UID ]] && cj::ro_bind /run/user/$UID
+    [[ -d /run/user/$UID ]] && cj::ro_bind /run/user/$UID || true
 }
 
 cj::path::bind_all() {
     local d
     IFS=':' read -ra dirs <<< "$PATH"
     for d in "${dirs[@]}"; do
-        [[ -d "$d" ]] && cj::ro_bind "$d"
+        [[ -d "$d" ]] && cj::ro_bind "$d" || true
     done
 }
 
@@ -181,13 +181,14 @@ cj::path::find_real() {
     bin="$(command -v "$name" 2>/dev/null)" || return 1
     real_bin="$(readlink -f "$bin" 2>/dev/null || echo "$bin")"
 
-    [[ -d "$(dirname "$real_bin")" ]] && cj::ro_bind "$(dirname "$real_bin")"
+    [[ -d "$(dirname "$real_bin")" ]] && cj::ro_bind "$(dirname "$real_bin")" || true
     echo "$bin"
 }
 
 cj::worktree::detect_config() {
     local project_dir="$1"
-    local parent="$(dirname "$project_dir")"
+    local parent
+    parent="$(dirname "$project_dir")"
     local verbose="${2:-false}"
 
     [[ -z "$project_dir" ]] && return 1
@@ -260,6 +261,9 @@ cj::env::passthrough() {
 
     # Timezone
     [[ -n "${TZ:-}" ]] && cj::setenv TZ "$TZ"
+
+    # Always return success (conditionals above may be false)
+    return 0
 }
 
 cj::credentials::find() {

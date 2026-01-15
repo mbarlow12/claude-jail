@@ -1,0 +1,70 @@
+name: Reusable Test Workflow
+
+on:
+  workflow_call:
+    inputs:
+      test-suite:
+        description: 'Which test suite to run (unit, integration, all)'
+        required: false
+        default: 'all'
+        type: string
+      install-bwrap:
+        description: 'Whether to install bubblewrap'
+        required: false
+        default: true
+        type: boolean
+      run-shellcheck:
+        description: 'Whether to run ShellCheck'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  test:
+    name: Run ${{ inputs.test-suite }} tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        if: inputs.install-bwrap
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap rsync
+
+      - name: Make test runner executable
+        run: chmod +x tests/run_tests.sh
+
+      - name: Run tests
+        run: ./tests/run_tests.sh ${{ inputs.test-suite }}
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    if: inputs.run-shellcheck
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck on lib files
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './lib'
+          severity: warning
+
+      - name: Run ShellCheck on bin files
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './bin'
+          severity: warning
+
+      - name: Run ShellCheck on profiles
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './profiles'
+          severity: warning

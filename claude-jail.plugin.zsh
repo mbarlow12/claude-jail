@@ -9,6 +9,7 @@ typeset -g _CJ_ROOT="${0:A:h}"
 source "$_CJ_ROOT/lib/bwrap.sh"
 source "$_CJ_ROOT/lib/config.sh"
 source "$_CJ_ROOT/lib/profiles.sh"
+source "$_CJ_ROOT/lib/sandbox.sh"
 
 # Load all profiles
 cj::profile::load_all "$_CJ_ROOT/profiles"
