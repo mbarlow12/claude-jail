@@ -207,11 +207,13 @@ teardown() {
 # Directory validation tests
 # =============================================================================
 
-@test "debug command works with nonexistent directory (shows what would run)" {
-    # debug command doesn't validate directory existence - it shows what WOULD run
-    run "$PROJECT_ROOT/bin/claude-jail" debug "/nonexistent/directory/12345"
+@test "debug command works with new project directory" {
+    # debug creates sandbox dirs and shows what bwrap command WOULD run
+    local new_project="$TEST_TMPDIR/new-project-that-doesnt-exist-yet"
+
+    run "$PROJECT_ROOT/bin/claude-jail" debug "$new_project"
 
     assert_success
     assert_output --partial "bwrap"
-    assert_output --partial "/nonexistent/directory/12345"
+    assert_output --partial "$new_project"
 }

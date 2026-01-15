@@ -163,14 +163,14 @@ cj::system::users() {
 }
 
 cj::system::run() {
-    [[ -d /run/user/$UID ]] && cj::ro_bind /run/user/$UID
+    [[ -d /run/user/$UID ]] && cj::ro_bind /run/user/$UID || true
 }
 
 cj::path::bind_all() {
     local d
     IFS=':' read -ra dirs <<< "$PATH"
     for d in "${dirs[@]}"; do
-        [[ -d "$d" ]] && cj::ro_bind "$d"
+        [[ -d "$d" ]] && cj::ro_bind "$d" || true
     done
 }
 
@@ -181,7 +181,7 @@ cj::path::find_real() {
     bin="$(command -v "$name" 2>/dev/null)" || return 1
     real_bin="$(readlink -f "$bin" 2>/dev/null || echo "$bin")"
 
-    [[ -d "$(dirname "$real_bin")" ]] && cj::ro_bind "$(dirname "$real_bin")"
+    [[ -d "$(dirname "$real_bin")" ]] && cj::ro_bind "$(dirname "$real_bin")" || true
     echo "$bin"
 }
 
