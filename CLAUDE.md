@@ -107,12 +107,7 @@ claude-jail -d ~/project
 
 ## Testing
 
-### Automated Tests (bats-core)
-
 ```bash
-# Initialize test submodules (first time only)
-git submodule update --init --recursive
-
 # Run all tests
 ./tests/run_tests.sh
 
@@ -121,102 +116,22 @@ git submodule update --init --recursive
 
 # Run only integration tests
 ./tests/run_tests.sh integration
-
-# Run a specific test file
-./tests/run_tests.sh tests/unit/bwrap.bats
 ```
 
-Test structure:
-- `tests/unit/` - Unit tests for each lib/*.sh module
-- `tests/integration/` - CLI and profile integration tests
-- `tests/test_helper/common.bash` - Shared test utilities
+## Development Setup (for Claude Code Web Sessions)
 
-### Manual Testing
+Quick setup for new development sessions:
 
 ```bash
-# Debug: print bwrap command without running
-claude-jail debug [dir] [profile]
-# or: ./bin/claude-jail debug [dir] [profile]
+# Install dependencies (Debian/Ubuntu)
+sudo apt-get update
+sudo apt-get install -y bubblewrap rsync shellcheck
 
-# Interactive shell inside sandbox to verify mounts
-claude-jail shell [dir] [profile]
-# or: ./bin/claude-jail shell [dir] [profile]
+# Initialize test submodules
+git submodule update --init --recursive
 
-# Verify isolation: these should fail inside sandbox
-ls /home
-cat ~/.ssh/id_rsa
-
-# Clean sandbox to test fresh config copy
-claude-jail clean [dir]
-# or: ./bin/claude-jail clean [dir]
+# Verify setup by running tests
+./tests/run_tests.sh
 ```
 
-## Creating Custom Profiles
-
-Add `profiles/myprofile.sh`:
-
-```bash
-#!/usr/bin/env bash
-# profiles/myprofile.sh - My custom isolation profile
-
-_cj_profile_myprofile() {
-    local project_dir="$1"
-    local sandbox_home="$2"
-
-    cj::unshare user pid
-    cj::system::base
-    cj::system::dns
-    cj::system::ssl
-    cj::proc
-    cj::dev
-    cj::tmpfs /tmp
-
-    cj::bind "$project_dir"
-    cj::bind "$sandbox_home"
-
-    # Custom mounts here
-    cj::ro_bind ~/my-tools
-
-    cj::setenv HOME "$sandbox_home"
-    cj::setenv PATH "$PATH"
-}
-
-cj::profile::register myprofile _cj_profile_myprofile
-```
-
-**Note**: Use pure bash syntax only. Avoid zsh-specific features like:
-- `${var:h}` → use `$(dirname "$var")`
-- `${(s/:/)var}` → use `IFS=: read -ra array <<< "$var"`
-- `typeset -gA` → use `declare -gA`
-
-## Core API (lib/bwrap.sh)
-
-| Function | Purpose |
-|----------|---------|
-| `cj::reset` | Clear accumulated args (call before building new command) |
-| `cj::ro_bind <src> [dst]` | Read-only bind mount |
-| `cj::bind <src> [dst]` | Read-write bind mount |
-| `cj::tmpfs <path>` | Mount tmpfs |
-| `cj::symlink <target> <link>` | Create symlink |
-| `cj::proc` / `cj::dev` | Mount /proc, /dev |
-| `cj::setenv <name> <value>` | Set environment variable |
-| `cj::unshare <ns...>` | Unshare namespaces (user, pid, net, ipc, uts, cgroup, all) |
-| `cj::share <ns...>` | Share namespaces (net) |
-| `cj::run <cmd...>` | Execute command in sandbox |
-| `cj::system::base` | Bind /usr, /bin, /lib, /lib64, handle symlinks |
-| `cj::system::dns` | Bind DNS config files |
-| `cj::system::ssl` | Bind SSL certificates |
-| `cj::path::bind_all` | Bind all directories in $PATH |
-
-## Sandbox API (lib/sandbox.sh)
-
-| Function | Purpose |
-|----------|---------|
-| `cj::sandbox::create_dirs <home>` | Create standard sandbox directory structure |
-| `cj::sandbox::copy_claude_config <home>` | Copy ~/.claude to sandbox (if enabled) |
-| `cj::sandbox::bind_credentials <home> <profile>` | Bind credentials file for live sync |
-| `cj::sandbox::init <project> <home> <profile>` | Full sandbox initialization |
-| `cj::sandbox::chdir_path <project> <profile>` | Get working directory path for profile |
-| `cj::sandbox::home_path <home> <profile>` | Get HOME path for profile display |
-| `cj::sandbox::print_info <...>` | Print verbose startup information |
-| `cj::sandbox::print_shell_info <home> <profile>` | Print shell entry information |
+For full development documentation including API reference, creating custom profiles, and code style guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).

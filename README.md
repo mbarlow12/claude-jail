@@ -1,6 +1,6 @@
 # claude-jail
 
-A modular Oh My Zsh plugin that runs Claude Code inside a bubblewrap sandbox.
+A shell-agnostic tool that runs Claude Code inside a bubblewrap sandbox to isolate it from your real home directory.
 
 ## Why?
 
@@ -10,14 +10,14 @@ Claude Code runs with your user permissions. A prompt injection or bug could:
 - Exfiltrate secrets: `cat ~/.ssh/id_rsa | curl ...`
 - Modify configs: `echo "malicious" >> ~/.bashrc`
 
-This plugin isolates Claude in a Linux namespace where your real home doesn't exist.
+This tool isolates Claude in a Linux namespace where your real home doesn't exist.
 
 ## Requirements
 
 - Linux with user namespaces enabled
 - [bubblewrap](https://github.com/containers/bubblewrap)
-- [Oh My Zsh](https://ohmyz.sh/)
 - [Claude Code](https://claude.ai/code)
+- (Optional) [Oh My Zsh](https://ohmyz.sh/) for zsh integration
 
 ```bash
 # Debian/Ubuntu
@@ -32,9 +32,22 @@ sudo dnf install bubblewrap
 
 ## Installation
 
+### Standalone (works with any shell)
+
+```bash
+# Clone the repository
+git clone https://github.com/mbarlow12/claude-jail.git
+cd claude-jail
+
+# Add to PATH (add to your shell's rc file)
+export PATH="$PATH:/path/to/claude-jail/bin"
+```
+
+### Oh My Zsh Plugin
+
 ```bash
 # Clone to omz custom plugins
-git clone https://github.com/YOUR_USERNAME/claude-jail.git \
+git clone https://github.com/mbarlow12/claude-jail.git \
     ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/claude-jail
 
 # Enable in ~/.zshrc
@@ -46,12 +59,26 @@ source ~/.zshrc
 
 ## Usage
 
+### Standalone
+
 ```bash
 claude-jail                     # Run in current directory
 claude-jail -d ~/project        # Specific directory
 claude-jail -p paranoid         # Maximum isolation
 claude-jail -v                  # Verbose output
 claude-jail -- --print "hi"     # Pass args to claude
+
+claude-jail shell               # Test the sandbox interactively
+claude-jail clean               # Remove .claude-sandbox/
+claude-jail debug               # Print bwrap command
+```
+
+### Zsh Plugin
+
+```bash
+claude-jail                     # Run in current directory
+claude-jail -d ~/project        # Specific directory
+claude-jail -p paranoid         # Maximum isolation
 
 claude-jail-shell               # Test the sandbox interactively
 claude-jail-clean               # Remove .claude-sandbox/
@@ -95,103 +122,82 @@ claude-jail-debug               # Print bwrap command
 
 ## Configuration
 
-Configure via `zstyle` in `~/.zshrc` (before the plugins line):
+### Environment Variables (recommended)
+
+```bash
+export CJ_PROFILE=paranoid
+export CJ_NETWORK=false
+export CJ_SANDBOX_HOME=.claude-sandbox
+export CJ_COPY_CLAUDE_CONFIG=true
+export CJ_EXTRA_RO="/usr/local/mylib:/opt/tools"
+export CJ_EXTRA_RW="/tmp/scratch"
+
+claude-jail -d ~/project
+```
+
+### Config File
+
+Create `~/.config/claude-jail/config` or `.claude-jail.conf` in your project:
+
+```bash
+CJ_PROFILE=standard
+CJ_NETWORK=true
+CJ_SANDBOX_HOME=.claude-sandbox
+CJ_COPY_CLAUDE_CONFIG=true
+CJ_EXTRA_RO=(/usr/local/mylib /opt/tools)
+CJ_EXTRA_RW=(/tmp/scratch)
+```
+
+### Zsh zstyle (backward compatibility)
 
 ```zsh
-# Change default profile
+# In ~/.zshrc (before the plugins line)
 zstyle ':claude-jail:*' profile paranoid
-
-# Disable network (claude won't work, but useful for testing)
 zstyle ':claude-jail:*' network false
-
-# Custom sandbox directory name
 zstyle ':claude-jail:*' sandbox-home .sandbox
-
-# Don't copy ~/.claude config (credentials are always bind-mounted)
 zstyle ':claude-jail:*' copy-claude-config false
-
-# Add extra read-only paths
 zstyle ':claude-jail:paths' extra-ro ~/shared-libs ~/reference
-
-# Add extra read-write paths (use sparingly!)
 zstyle ':claude-jail:paths' extra-rw ~/scratch
+```
+
+### Configuration Priority
+
+1. CLI arguments (`--profile`, `--ro`, etc.)
+2. Environment variables (`CJ_PROFILE`, `CJ_EXTRA_RO`, etc.)
+3. Config file (`.claude-jail.conf`, `~/.config/claude-jail/config`)
+4. Built-in defaults
+
+## Testing the Sandbox
+
+```bash
+# See what bwrap command would run
+claude-jail debug
+
+# Enter sandbox shell to explore
+claude-jail shell
+ls /home          # Should fail
+echo $HOME        # Shows sandbox path
 ```
 
 ## Architecture
 
 ```
 claude-jail/
-├── claude-jail.plugin.zsh    # Entry point, user commands
+├── bin/
+│   └── claude-jail           # Standalone bash entry point
 ├── lib/
-│   ├── bwrap.zsh             # Core bwrap building blocks
-│   ├── config.zsh            # zstyle configuration
-│   └── profiles.zsh          # Profile management
-└── profiles/
-    ├── minimal.zsh           # Fast, basic isolation
-    ├── standard.zsh          # Balanced (default)
-    ├── dev.zsh               # Developer toolchains
-    └── paranoid.zsh          # Maximum isolation
+│   ├── bwrap.sh              # Core bwrap building blocks
+│   ├── config.sh             # Configuration management
+│   ├── profiles.sh           # Profile registration/loading
+│   └── sandbox.sh            # Sandbox setup utilities
+├── profiles/
+│   ├── minimal.sh            # Fast, basic isolation
+│   ├── standard.sh           # Balanced (default)
+│   ├── dev.sh                # Developer toolchains
+│   └── paranoid.sh           # Maximum isolation
+├── tests/                    # Automated tests (bats-core)
+└── claude-jail.plugin.zsh    # Zsh plugin (thin wrapper)
 ```
-
-### Extending
-
-Create custom profiles in `~/.oh-my-zsh/custom/plugins/claude-jail/profiles/`:
-
-```zsh
-# profiles/custom.zsh
-_cj_profile_custom() {
-    local project_dir="$1"
-    local sandbox_home="$2"
-    
-    cj::unshare user pid
-    cj::system::base
-    cj::system::dns
-    cj::system::ssl
-    cj::proc
-    cj::dev
-    cj::tmpfs /tmp
-    
-    cj::bind "$project_dir"
-    cj::bind "$sandbox_home"
-    
-    # Your custom mounts
-    cj::ro_bind ~/my-tools
-    
-    cj::setenv HOME "$sandbox_home"
-    cj::setenv PATH "$PATH"
-}
-
-cj::profile::register custom _cj_profile_custom
-```
-
-## API Reference
-
-### Core Functions (`lib/bwrap.zsh`)
-
-| Function | Description |
-|----------|-------------|
-| `cj::reset` | Clear all accumulated bwrap args |
-| `cj::ro_bind <src> [dst]` | Read-only bind mount |
-| `cj::bind <src> [dst]` | Read-write bind mount |
-| `cj::tmpfs <path>` | Mount tmpfs |
-| `cj::symlink <target> <link>` | Create symlink |
-| `cj::proc [path]` | Mount /proc |
-| `cj::dev [path]` | Mount /dev |
-| `cj::setenv <name> <value>` | Set environment variable |
-| `cj::unshare <ns...>` | Unshare namespaces (user, pid, net, ipc, uts, cgroup, all) |
-| `cj::share <ns...>` | Share namespaces (net) |
-| `cj::run <cmd...>` | Execute command in sandbox |
-
-### System Helpers
-
-| Function | Description |
-|----------|-------------|
-| `cj::system::base` | Bind /usr, /bin, /lib, /lib64 |
-| `cj::system::dns` | Bind DNS config files |
-| `cj::system::ssl` | Bind SSL certificates |
-| `cj::system::users` | Bind passwd, group, localtime |
-| `cj::path::bind_all` | Bind all directories in $PATH |
-| `cj::path::find_real <name>` | Find and bind executable |
 
 ## Troubleshooting
 
@@ -223,10 +229,10 @@ claude-jail
 
 ```bash
 # See what bwrap command would run
-claude-jail-debug
+claude-jail debug
 
 # Enter sandbox shell to explore
-claude-jail-shell
+claude-jail shell
 ls /home          # Should fail
 echo $HOME        # Shows sandbox path
 ```
@@ -237,6 +243,10 @@ echo $HOME        # Shows sandbox path
 - The sandbox protects against accidental damage, not determined attackers
 - For higher security, use `--no-network` or run in a VM
 - Consider [cco](https://github.com/nikvdp/cco) or Docker for additional isolation
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, creating custom profiles, and API reference.
 
 ## Credits
 
