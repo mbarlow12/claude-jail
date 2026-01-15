@@ -1,0 +1,326 @@
+#!/usr/bin/env bash
+# claude-jail - Run Claude Code in a bubblewrap sandbox
+# https://github.com/mbarlow12/claude-jail
+
+set -euo pipefail
+
+# Determine script directory
+if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+    _CJ_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+else
+    _CJ_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+fi
+
+# Source core libraries
+source "$_CJ_ROOT/lib/bwrap.sh"
+source "$_CJ_ROOT/lib/config.sh"
+source "$_CJ_ROOT/lib/profiles.sh"
+
+# Load all profiles
+cj::profile::load_all "$_CJ_ROOT/profiles"
+
+_claude_jail_help() {
+    cat <<'EOF'
+claude-jail - Run Claude Code in a bubblewrap sandbox
+
+USAGE
+    claude-jail [OPTIONS] [-- CLAUDE_ARGS...]
+
+OPTIONS
+    -d, --dir <PATH>      Project directory (default: cwd)
+    -p, --profile <NAME>  Isolation profile (default: standard)
+    -v, --verbose         Show sandbox info on start
+    --network             Force enable network
+    --no-network          Disable network access
+    --ro <PATH>           Add read-only path (can repeat)
+    --rw <PATH>           Add read-write path (can repeat)
+    --list-profiles       List available profiles
+    --show-config         Show current configuration
+    --help-config         Show configuration help
+    -h, --help            Show this help
+
+PROFILES
+    minimal     Fast, basic isolation. Mounts /etc read-only.
+    standard    Balanced. Selective /etc, preserves PATH. (default)
+    paranoid    Maximum isolation. Fake paths at /work and /sandbox.
+    dev         Toolchain-aware. Binds mise, cargo, nvm, etc. read-only.
+
+CONFIGURATION
+    See --help-config for detailed configuration information.
+    Quick example:
+        export CJ_PROFILE=paranoid
+        export CJ_EXTRA_RO="/usr/local/mylib:/opt/tools"
+        claude-jail
+
+COMMANDS
+    claude-jail           Run claude in sandbox
+    claude-jail shell     Open bash in sandbox (for testing)
+    claude-jail clean     Remove .claude-sandbox directory
+    claude-jail debug     Print bwrap command without running
+
+EXAMPLES
+    claude-jail                       # Run in current directory
+    claude-jail -d ~/project          # Run in specific directory
+    claude-jail -p paranoid           # Maximum isolation
+    claude-jail -v -- --print "hi"    # Verbose, pass args to claude
+    claude-jail debug                 # See what bwrap would run
+    claude-jail shell                 # Test sandbox interactively
+
+SECURITY
+    Inside the sandbox:
+    - $HOME points to .claude-sandbox/ (or /sandbox in paranoid mode)
+    - /home, /root don't exist
+    - System dirs are read-only
+    - Only project directory is writable
+
+    Even `rm -rf ~` or `rm -rf /` cannot harm your real system.
+EOF
+}
+
+_claude_jail_main() {
+    local project_dir=""
+    local profile=""
+    local verbose=""
+    local network=""
+    local -a cli_ro=()
+    local -a cli_rw=()
+    local -a claude_args=()
+
+    # Parse args first, handle info commands before checking for bwrap
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help)      _claude_jail_help; return 0 ;;
+            --help-config)  cj::config::help; return 0 ;;
+            --list-profiles) cj::profile::list; return 0 ;;
+            --show-config)  cj::config::show; return 0 ;;
+            -d|--dir)       project_dir="$2"; shift 2 ;;
+            -p|--profile)   profile="$2"; shift 2 ;;
+            -v|--verbose)   verbose=true; shift ;;
+            --no-network)   network=false; shift ;;
+            --network)      network=true; shift ;;
+            --ro)           cli_ro+=("$2"); shift 2 ;;
+            --rw)           cli_rw+=("$2"); shift 2 ;;
+            --)             shift; claude_args+=("$@"); break ;;
+            -*)             echo "Unknown option: $1" >&2; return 1 ;;
+            *)              claude_args+=("$1"); shift ;;
+        esac
+    done
+
+    # Now check for bwrap
+    if ! command -v bwrap &>/dev/null; then
+        echo "Error: bubblewrap not found. Install: sudo apt install bubblewrap" >&2
+        return 1
+    fi
+
+    project_dir="${project_dir:-$(pwd)}"
+    project_dir="$(realpath "$project_dir" 2>/dev/null || echo "$project_dir")"
+
+    if [[ ! -d "$project_dir" ]]; then
+        echo "Error: Not a directory: $project_dir" >&2
+        return 1
+    fi
+
+    profile="${profile:-$(cj::config::get profile standard)}"
+
+    if ! cj::profile::exists "$profile"; then
+        echo "Error: Unknown profile '$profile'" >&2
+        echo "Available: $(cj::profile::list | tr '\n' ' ')" >&2
+        return 1
+    fi
+
+    local sandbox_home_name="$(cj::config::get sandbox_home .claude-sandbox)"
+    local sandbox_home="$project_dir/$sandbox_home_name"
+
+    mkdir -p "$sandbox_home"/{.config,.cache,.local/share,.claude}
+
+    if cj::config::get_bool copy_claude_config true; then
+        if [[ -d ~/.claude ]] && [[ ! -f "$sandbox_home/.claude/.copied" ]]; then
+            rsync -a --ignore-existing ~/.claude/ "$sandbox_home/.claude/" 2>/dev/null || true
+            touch "$sandbox_home/.claude/.copied"
+        fi
+        [[ -f ~/.claude.json ]] && [[ ! -f "$sandbox_home/.claude.json" ]] && \
+            cp ~/.claude.json "$sandbox_home/.claude.json" 2>/dev/null || true
+    fi
+
+    cj::reset
+    cj::profile::apply "$profile" "$project_dir" "$sandbox_home"
+
+    cj::worktree::detect_config "$project_dir" "${verbose:-false}"
+
+    # Bind-mount credentials for live sync (allows /login to persist)
+    local cred_source
+    if cred_source="$(cj::credentials::find)"; then
+        local cred_target="$sandbox_home/.claude/.credentials.json"
+        [[ "$profile" == "paranoid" ]] && cred_target="/sandbox/.claude/.credentials.json"
+        touch "$sandbox_home/.claude/.credentials.json"
+        cj::bind "$cred_source" "$cred_target"
+    fi
+
+    # Pass through environment variables (git, proxy, API key)
+    cj::env::passthrough
+
+    if [[ "${network:-}" == "false" ]]; then
+        _CJ_NS+=(--unshare-net)
+    fi
+
+    # Config file extra paths
+    local -a extra_ro
+    local -a extra_rw
+    IFS=' ' read -ra extra_ro <<< "$(cj::config::get_extra_ro)"
+    IFS=' ' read -ra extra_rw <<< "$(cj::config::get_extra_rw)"
+
+    local p
+    for p in "${extra_ro[@]}"; do
+        [[ -n "$p" && -e "$p" ]] && cj::ro_bind "$p"
+    done
+    for p in "${extra_rw[@]}"; do
+        [[ -n "$p" && -e "$p" ]] && cj::bind "$p"
+    done
+
+    # CLI path options (--ro, --rw)
+    for p in "${cli_ro[@]}"; do
+        [[ -n "$p" && -e "$p" ]] && cj::ro_bind "$p"
+    done
+    for p in "${cli_rw[@]}"; do
+        [[ -n "$p" && -e "$p" ]] && cj::bind "$p"
+    done
+
+    local claude_bin
+    claude_bin="$(cj::path::find_real claude)" || {
+        echo "Error: claude not found in PATH" >&2
+        return 1
+    }
+
+    local chdir_path="$project_dir"
+    [[ "$profile" == "paranoid" ]] && chdir_path="/work"
+
+    if [[ "${verbose:-false}" == true ]]; then
+        echo "🔒 claude-jail"
+        echo "   Profile: $profile"
+        echo "   Project: $project_dir"
+        echo "   Sandbox: $sandbox_home"
+        echo "   Claude:  $claude_bin"
+        echo ""
+    fi
+
+    cj::chdir "$chdir_path"
+    cj::run "$claude_bin" "${claude_args[@]}"
+}
+
+_claude_jail_shell() {
+    local project_dir="${1:-$(pwd)}"
+    local profile="${2:-$(cj::config::get profile standard)}"
+
+    project_dir="$(realpath "$project_dir" 2>/dev/null || echo "$project_dir")"
+    local sandbox_home="$project_dir/$(cj::config::get sandbox_home .claude-sandbox)"
+
+    mkdir -p "$sandbox_home/.claude"
+
+    cj::reset
+    cj::profile::apply "$profile" "$project_dir" "$sandbox_home"
+
+    # Bind-mount credentials for live sync
+    local cred_source
+    if cred_source="$(cj::credentials::find)"; then
+        local cred_target="$sandbox_home/.claude/.credentials.json"
+        [[ "$profile" == "paranoid" ]] && cred_target="/sandbox/.claude/.credentials.json"
+        touch "$sandbox_home/.claude/.credentials.json"
+        cj::bind "$cred_source" "$cred_target"
+    fi
+
+    cj::env::passthrough
+
+    local chdir_path="$project_dir"
+    [[ "$profile" == "paranoid" ]] && chdir_path="/work"
+
+    echo "🔒 Entering sandbox shell (profile: $profile)"
+    echo "   \$HOME = $sandbox_home"
+    echo "   Try: ls /home  (should fail)"
+    echo ""
+
+    cj::chdir "$chdir_path"
+    cj::run /bin/bash
+}
+
+_claude_jail_clean() {
+    local project_dir="${1:-$(pwd)}"
+    local sandbox_home="$project_dir/$(cj::config::get sandbox_home .claude-sandbox)"
+
+    if [[ -d "$sandbox_home" ]]; then
+        echo "Removing $sandbox_home ..."
+        rm -rf "$sandbox_home"
+        echo "Done."
+    else
+        echo "No sandbox found at $sandbox_home"
+    fi
+}
+
+_claude_jail_debug() {
+    local project_dir="${1:-$(pwd)}"
+    local profile="${2:-$(cj::config::get profile standard)}"
+
+    project_dir="$(realpath "$project_dir" 2>/dev/null || echo "$project_dir")"
+    local sandbox_home="$project_dir/$(cj::config::get sandbox_home .claude-sandbox)"
+
+    # Create sandbox directories so bind mounts don't fail
+    mkdir -p "$sandbox_home"/{.config,.cache,.local/share,.claude}
+
+    local chdir_path="$project_dir"
+    [[ "$profile" == "paranoid" ]] && chdir_path="/work"
+
+    cj::reset
+    cj::profile::apply "$profile" "$project_dir" "$sandbox_home"
+    cj::worktree::detect_config "$project_dir" false
+
+    # Bind-mount credentials for live sync
+    local cred_source
+    if cred_source="$(cj::credentials::find)"; then
+        local cred_target="$sandbox_home/.claude/.credentials.json"
+        [[ "$profile" == "paranoid" ]] && cred_target="/sandbox/.claude/.credentials.json"
+        cj::bind "$cred_source" "$cred_target"
+    fi
+
+    cj::env::passthrough
+    cj::chdir "$chdir_path"
+
+    echo "# Profile: $profile"
+    echo "# Project: $project_dir"
+    echo "# Sandbox: $sandbox_home"
+    echo ""
+
+    local -a cmd
+    cmd=(bwrap --die-with-parent --new-session)
+    cmd+=("${_CJ_NS[@]}")
+    cmd+=("${_CJ_PRE[@]}")
+    cmd+=("${_CJ_BINDS[@]}")
+    cmd+=("${_CJ_ENV[@]}")
+    cmd+=(-- claude)
+
+    printf '%q \\\n    ' "${cmd[@]}"
+    echo '"$@"'
+}
+
+# Main dispatcher
+case "${1:-}" in
+    shell)
+        shift
+        _claude_jail_shell "$@"
+        ;;
+    clean)
+        shift
+        _claude_jail_clean "$@"
+        ;;
+    debug)
+        shift
+        _claude_jail_debug "$@"
+        ;;
+    -h|--help)
+        _claude_jail_help
+        ;;
+    --help-config)
+        cj::config::help
+        ;;
+    *)
+        _claude_jail_main "$@"
+        ;;
+esac
