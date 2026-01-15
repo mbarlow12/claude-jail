@@ -129,7 +129,8 @@ _claude_jail_main() {
         return 1
     fi
 
-    local sandbox_home_name="$(cj::config::get sandbox_home .claude-sandbox)"
+    local sandbox_home_name
+    sandbox_home_name="$(cj::config::get sandbox_home .claude-sandbox)"
     local sandbox_home="$project_dir/$sandbox_home_name"
 
     cj::sandbox::init "$project_dir" "$sandbox_home" "$profile"
@@ -187,7 +188,8 @@ _claude_jail_shell() {
     local profile="${2:-$(cj::config::get profile standard)}"
 
     project_dir="$(realpath "$project_dir" 2>/dev/null || echo "$project_dir")"
-    local sandbox_home="$project_dir/$(cj::config::get sandbox_home .claude-sandbox)"
+    local sandbox_home
+    sandbox_home="$project_dir/$(cj::config::get sandbox_home .claude-sandbox)"
 
     cj::sandbox::init "$project_dir" "$sandbox_home" "$profile"
     cj::sandbox::bind_credentials "$sandbox_home" "$profile" || true
@@ -204,7 +206,8 @@ _claude_jail_shell() {
 
 _claude_jail_clean() {
     local project_dir="${1:-$(pwd)}"
-    local sandbox_home="$project_dir/$(cj::config::get sandbox_home .claude-sandbox)"
+    local sandbox_home
+    sandbox_home="$project_dir/$(cj::config::get sandbox_home .claude-sandbox)"
 
     if [[ -d "$sandbox_home" ]]; then
         echo "Removing $sandbox_home ..."
@@ -220,7 +223,8 @@ _claude_jail_debug() {
     local profile="${2:-$(cj::config::get profile standard)}"
 
     project_dir="$(realpath "$project_dir" 2>/dev/null || echo "$project_dir")"
-    local sandbox_home="$project_dir/$(cj::config::get sandbox_home .claude-sandbox)"
+    local sandbox_home
+    sandbox_home="$project_dir/$(cj::config::get sandbox_home .claude-sandbox)"
 
     # Create sandbox directories so bind mounts don't fail (but don't copy config)
     cj::sandbox::create_dirs "$sandbox_home"
