@@ -1,0 +1,259 @@
+#!/usr/bin/env bash
+# Generate changelog entries from commits since last tag
+# Usage: ./scripts/changelog [--dry-run] [--overwrite]
+
+set -euo pipefail
+
+CHANGELOG_FILE="CHANGELOG.md"
+DRY_RUN=false
+OVERWRITE=false
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --dry-run|-n)
+            DRY_RUN=true
+            shift
+            ;;
+        --overwrite|-o)
+            OVERWRITE=true
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: $0 [--dry-run] [--overwrite]"
+            echo ""
+            echo "Generate changelog entries from commits since last tag."
+            echo ""
+            echo "Options:"
+            echo "  --dry-run, -n    Print what would be added without modifying files"
+            echo "  --overwrite, -o  Replace Unreleased content (default: append)"
+            echo "  --help, -h       Show this help"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1" >&2
+            exit 1
+            ;;
+    esac
+done
+
+# Get the last tag
+get_last_tag() {
+    git describe --tags --abbrev=0 2>/dev/null || echo ""
+}
+
+# Get GitHub repo URL from git remote
+get_repo_url() {
+    local remote_url
+    remote_url=$(git remote get-url origin 2>/dev/null || echo "")
+
+    # Convert SSH URL to HTTPS URL
+    # git@github.com:user/repo.git -> https://github.com/user/repo
+    if [[ "$remote_url" =~ ^git@github\.com:(.+)\.git$ ]]; then
+        echo "https://github.com/${BASH_REMATCH[1]}"
+    elif [[ "$remote_url" =~ ^git@github\.com:(.+)$ ]]; then
+        echo "https://github.com/${BASH_REMATCH[1]}"
+    elif [[ "$remote_url" =~ ^https://github\.com/(.+)\.git$ ]]; then
+        echo "https://github.com/${BASH_REMATCH[1]}"
+    elif [[ "$remote_url" =~ ^https://github\.com/(.+)$ ]]; then
+        echo "https://github.com/${BASH_REMATCH[1]}"
+    else
+        echo ""
+    fi
+}
+
+# Get commits since last tag (or all commits if no tag)
+# Format: hash<TAB>subject
+get_commits() {
+    local last_tag="$1"
+    if [[ -n "$last_tag" ]]; then
+        git log --pretty=format:"%h	%s" "$last_tag"..HEAD
+    else
+        git log --pretty=format:"%h	%s"
+    fi
+}
+
+# Categorize a commit message and return the category
+categorize_commit() {
+    local msg="$1"
+
+    if [[ "$msg" =~ ^feat(\(.+\))?:\ * ]]; then
+        echo "Added"
+    elif [[ "$msg" =~ ^fix(\(.+\))?:\ * ]]; then
+        echo "Fixed"
+    elif [[ "$msg" =~ ^docs(\(.+\))?:\ * ]]; then
+        echo "Documentation"
+    elif [[ "$msg" =~ ^(refactor|perf)(\(.+\))?:\ * ]]; then
+        echo "Changed"
+    elif [[ "$msg" =~ ^(chore|ci|test|build)(\(.+\))?:\ * ]]; then
+        echo "Other"
+    else
+        echo "Other"
+    fi
+}
+
+# Clean commit message (remove type prefix)
+clean_message() {
+    local msg="$1"
+    # Remove conventional commit prefix like "feat(scope): " or "fix: "
+    echo "$msg" | sed -E 's/^[a-z]+(\([^)]+\))?:[[:space:]]*//'
+}
+
+# Generate changelog content
+generate_changelog() {
+    local last_tag="$1"
+    local repo_url
+    repo_url=$(get_repo_url)
+
+    declare -A categories
+    categories=(
+        ["Added"]=""
+        ["Fixed"]=""
+        ["Changed"]=""
+        ["Documentation"]=""
+        ["Other"]=""
+    )
+
+    while IFS=$'\t' read -r hash msg; do
+        [[ -z "$msg" ]] && continue
+
+        local category
+        category=$(categorize_commit "$msg")
+        local clean_msg
+        clean_msg=$(clean_message "$msg")
+
+        # Format entry with commit link if repo URL is available
+        local entry
+        if [[ -n "$repo_url" ]]; then
+            entry="- $clean_msg ([$hash]($repo_url/commit/$hash))"
+        else
+            entry="- $clean_msg ($hash)"
+        fi
+
+        if [[ -n "${categories[$category]}" ]]; then
+            categories[$category]+=$'\n'"$entry"
+        else
+            categories[$category]="$entry"
+        fi
+    done < <(get_commits "$last_tag")
+
+    # Output in preferred order
+    local output=""
+    for cat in "Added" "Changed" "Fixed" "Documentation" "Other"; do
+        if [[ -n "${categories[$cat]}" ]]; then
+            output+="### $cat"$'\n'
+            output+="${categories[$cat]}"$'\n'
+            output+=$'\n'
+        fi
+    done
+
+    echo "$output"
+}
+
+# Find the line number of "## [Unreleased]" in CHANGELOG.md
+find_unreleased_line() {
+    grep -n "^## \[Unreleased\]" "$CHANGELOG_FILE" | cut -d: -f1
+}
+
+# Find the line number of the next section after Unreleased
+find_next_section_line() {
+    local unreleased_line="$1"
+    # Find the next ## [ line after Unreleased
+    # Use || true to prevent grep from failing when no match is found
+    tail -n +"$((unreleased_line + 1))" "$CHANGELOG_FILE" | grep -n "^## \[" | head -1 | cut -d: -f1 || true
+}
+
+# Update CHANGELOG.md with new content
+update_changelog() {
+    local new_content="$1"
+    local unreleased_line
+    unreleased_line=$(find_unreleased_line)
+
+    if [[ -z "$unreleased_line" ]]; then
+        echo "Error: Could not find '## [Unreleased]' section in $CHANGELOG_FILE" >&2
+        exit 1
+    fi
+
+    local next_section_offset
+    next_section_offset=$(find_next_section_line "$unreleased_line")
+
+    local next_section_line
+    if [[ -n "$next_section_offset" ]]; then
+        next_section_line=$((unreleased_line + next_section_offset))
+    else
+        # No next section, use end of file
+        next_section_line=$(($(wc -l < "$CHANGELOG_FILE") + 1))
+    fi
+
+    # Build the new file
+    local tmp_file
+    tmp_file=$(mktemp)
+
+    # Header (up to and including ## [Unreleased])
+    head -n "$unreleased_line" "$CHANGELOG_FILE" > "$tmp_file"
+    echo "" >> "$tmp_file"
+
+    if [[ "$OVERWRITE" == "true" ]]; then
+        # Just use new content
+        echo "$new_content" >> "$tmp_file"
+    else
+        # Append: include existing content between Unreleased and next section
+        local existing_content
+        existing_content=$(sed -n "$((unreleased_line + 1)),$((next_section_line - 1))p" "$CHANGELOG_FILE" | sed '/^$/d')
+
+        if [[ -n "$existing_content" ]]; then
+            echo "$existing_content" >> "$tmp_file"
+            echo "" >> "$tmp_file"
+        fi
+        echo "$new_content" >> "$tmp_file"
+    fi
+
+    # Rest of file (from next section onwards)
+    if [[ -n "$next_section_offset" ]]; then
+        tail -n +"$next_section_line" "$CHANGELOG_FILE" >> "$tmp_file"
+    fi
+
+    mv "$tmp_file" "$CHANGELOG_FILE"
+}
+
+main() {
+    if [[ ! -f "$CHANGELOG_FILE" ]]; then
+        echo "Error: $CHANGELOG_FILE not found" >&2
+        exit 1
+    fi
+
+    local last_tag
+    last_tag=$(get_last_tag)
+
+    if [[ -n "$last_tag" ]]; then
+        echo "Generating changelog since $last_tag..."
+    else
+        echo "No previous tags found. Generating changelog from all commits..."
+    fi
+
+    local changelog_content
+    changelog_content=$(generate_changelog "$last_tag")
+
+    if [[ -z "$changelog_content" ]]; then
+        echo "No commits found to add to changelog."
+        exit 0
+    fi
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo ""
+        echo "=== Would add to Unreleased section ==="
+        echo ""
+        echo "$changelog_content"
+    else
+        update_changelog "$changelog_content"
+        echo "Updated $CHANGELOG_FILE"
+
+        if [[ "$OVERWRITE" == "true" ]]; then
+            echo "(Unreleased section was overwritten)"
+        else
+            echo "(Content was appended to Unreleased section)"
+        fi
+    fi
+}
+
+main "$@"
