@@ -120,6 +120,15 @@ claude-jail -d ~/project
 
 ## Development Setup (for Claude Code Web Sessions)
 
+**Important**: Before starting work, ensure your branch is up to date with `main`:
+
+```bash
+git fetch origin main
+git merge origin/main
+```
+
+Do this periodically during longer sessions to avoid conflicts.
+
 Quick setup for new development sessions:
 
 ```bash

@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag matches VERSION
+        run: |
+          VERSION_FILE=$(cat VERSION)
+          TAG_VERSION=${GITHUB_REF_NAME#v}
+          if [[ "$VERSION_FILE" != "$TAG_VERSION" ]]; then
+            echo "Error: Tag version ($TAG_VERSION) does not match VERSION file ($VERSION_FILE)"
+            exit 1
+          fi
+          echo "VERSION=$VERSION_FILE" >> $GITHUB_ENV
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          echo "Previous tag: $PREV_TAG"
+          echo "Current tag: $GITHUB_REF_NAME"
+
+          # Generate changelog
+          {
+            echo "## What's Changed"
+            echo ""
+
+            if [[ -n "$PREV_TAG" ]]; then
+              # Group commits by type
+              echo "### Features"
+              git log --pretty=format:"- %s (%h)" "$PREV_TAG"..HEAD --grep="^feat" || true
+              echo ""
+              echo ""
+
+              echo "### Bug Fixes"
+              git log --pretty=format:"- %s (%h)" "$PREV_TAG"..HEAD --grep="^fix" || true
+              echo ""
+              echo ""
+
+              echo "### Other Changes"
+              git log --pretty=format:"- %s (%h)" "$PREV_TAG"..HEAD --grep="^feat" --grep="^fix" --invert-grep || true
+            else
+              echo "Initial release"
+              echo ""
+              git log --pretty=format:"- %s (%h)" HEAD || true
+            fi
+
+            echo ""
+            echo ""
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG:-$(git rev-list --max-parents=0 HEAD)}...$GITHUB_REF_NAME"
+          } > changelog.md
+
+          cat changelog.md
+
+      - name: Create release archives
+        run: |
+          VERSION=${{ env.VERSION }}
+          ARCHIVE_NAME="claude-jail-${VERSION}"
+
+          # Create a clean directory with release files
+          mkdir -p "$ARCHIVE_NAME"
+
+          # Copy release files (exclude dev files)
+          cp -r bin lib profiles scripts "$ARCHIVE_NAME/"
+          cp claude-jail.plugin.zsh "$ARCHIVE_NAME/"
+          cp install.sh "$ARCHIVE_NAME/"
+          cp VERSION LICENSE README.md "$ARCHIVE_NAME/" 2>/dev/null || cp VERSION README.md "$ARCHIVE_NAME/"
+
+          # Create tarball
+          tar -czvf "${ARCHIVE_NAME}.tar.gz" "$ARCHIVE_NAME"
+
+          # Create zip
+          zip -r "${ARCHIVE_NAME}.zip" "$ARCHIVE_NAME"
+
+          # Checksum
+          sha256sum "${ARCHIVE_NAME}.tar.gz" "${ARCHIVE_NAME}.zip" > checksums.txt
+
+          echo "Created archives:"
+          ls -la "${ARCHIVE_NAME}".*
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          body_path: changelog.md
+          files: |
+            claude-jail-${{ env.VERSION }}.tar.gz
+            claude-jail-${{ env.VERSION }}.zip
+            checksums.txt
+          fail_on_unmatched_files: true
