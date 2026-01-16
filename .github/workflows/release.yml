@@ -1,9 +1,21 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      custom_version:
+        description: 'Custom version (overrides bump, e.g., 2.0.0)'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -11,64 +23,151 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Only allow releases from main branch
+    if: github.ref == 'refs/heads/main'
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Validate tag matches VERSION
+      - name: Configure git
         run: |
-          VERSION_FILE=$(cat VERSION)
-          TAG_VERSION=${GITHUB_REF_NAME#v}
-          if [[ "$VERSION_FILE" != "$TAG_VERSION" ]]; then
-            echo "Error: Tag version ($TAG_VERSION) does not match VERSION file ($VERSION_FILE)"
-            exit 1
-          fi
-          echo "VERSION=$VERSION_FILE" >> $GITHUB_ENV
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Extract changelog for version
+      - name: Calculate version
+        id: version
+        run: |
+          # Get current version from latest tag
+          CURRENT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          CURRENT_VERSION=${CURRENT_TAG#v}
+          echo "Current version: $CURRENT_VERSION"
+
+          # Calculate new version
+          if [[ -n "${{ inputs.custom_version }}" ]]; then
+            NEW_VERSION="${{ inputs.custom_version }}"
+            echo "Using custom version: $NEW_VERSION"
+          else
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+
+            case "${{ inputs.bump }}" in
+              major)
+                NEW_VERSION="$((MAJOR + 1)).0.0"
+                ;;
+              minor)
+                NEW_VERSION="${MAJOR}.$((MINOR + 1)).0"
+                ;;
+              patch)
+                NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+                ;;
+            esac
+            echo "Bumped ${{ inputs.bump }}: $CURRENT_VERSION -> $NEW_VERSION"
+          fi
+
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "current_tag=$CURRENT_TAG" >> $GITHUB_OUTPUT
+
+      - name: Extract Unreleased changelog
         id: changelog
         run: |
-          VERSION=${{ env.VERSION }}
+          VERSION=${{ steps.version.outputs.new_version }}
 
-          # Extract the section for this version from CHANGELOG.md
-          # Looks for ## [X.Y.Z] and extracts until the next ## [
-          if grep -q "## \[${VERSION}\]" CHANGELOG.md; then
-            sed -n "/## \[${VERSION}\]/,/## \[/p" CHANGELOG.md | sed '$d' > release_notes.md
-          else
-            # Fallback: generate from commits
-            PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-            {
-              echo "## What's Changed"
-              echo ""
-              if [[ -n "$PREV_TAG" ]]; then
-                git log --pretty=format:"- %s (%h)" "$PREV_TAG"..HEAD
-              else
-                git log --pretty=format:"- %s (%h)"
-              fi
-              echo ""
-              echo ""
-              echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG:-$(git rev-list --max-parents=0 HEAD)}...$GITHUB_REF_NAME"
-            } > release_notes.md
+          # Extract content between "## [Unreleased]" and the next "## ["
+          UNRELEASED_CONTENT=$(sed -n '/^## \[Unreleased\]/,/^## \[/p' CHANGELOG.md | sed '1d;$d' | sed '/^$/d')
+
+          if [[ -z "$UNRELEASED_CONTENT" ]]; then
+            echo "::error::The Unreleased section in CHANGELOG.md is empty. Please add changelog entries before releasing."
+            echo "::error::You can use ./scripts/changelog to generate entries from commits."
+            exit 1
           fi
 
-          echo "Release notes:"
-          cat release_notes.md
+          echo "Unreleased content:"
+          echo "$UNRELEASED_CONTENT"
+
+          # Save to file for later use (handles multiline)
+          echo "$UNRELEASED_CONTENT" > /tmp/unreleased_content.md
+
+          # Also save for release notes
+          {
+            echo "## What's Changed"
+            echo ""
+            echo "$UNRELEASED_CONTENT"
+          } > /tmp/release_notes.md
+
+      - name: Update CHANGELOG.md
+        run: |
+          VERSION=${{ steps.version.outputs.new_version }}
+          DATE=$(date +%Y-%m-%d)
+          UNRELEASED_CONTENT=$(cat /tmp/unreleased_content.md)
+
+          # Create the new version section
+          NEW_SECTION="## [$VERSION] - $DATE
+
+$UNRELEASED_CONTENT"
+
+          # Update CHANGELOG.md:
+          # 1. Keep everything up to and including "## [Unreleased]"
+          # 2. Add blank line after Unreleased header
+          # 3. Insert new version section
+          # 4. Keep everything from the old first version section onwards
+
+          # Find line numbers
+          UNRELEASED_LINE=$(grep -n "^## \[Unreleased\]" CHANGELOG.md | cut -d: -f1)
+          NEXT_VERSION_LINE=$(tail -n +$((UNRELEASED_LINE + 1)) CHANGELOG.md | grep -n "^## \[" | head -1 | cut -d: -f1)
+
+          if [[ -n "$NEXT_VERSION_LINE" ]]; then
+            NEXT_VERSION_LINE=$((UNRELEASED_LINE + NEXT_VERSION_LINE))
+          fi
+
+          # Build new changelog
+          {
+            # Header through Unreleased
+            head -n "$UNRELEASED_LINE" CHANGELOG.md
+            echo ""
+            # New version section
+            echo "$NEW_SECTION"
+            echo ""
+            # Rest of file (previous versions)
+            if [[ -n "$NEXT_VERSION_LINE" ]]; then
+              tail -n +$NEXT_VERSION_LINE CHANGELOG.md
+            fi
+          } > CHANGELOG.md.new
+
+          mv CHANGELOG.md.new CHANGELOG.md
+
+          echo "Updated CHANGELOG.md:"
+          head -50 CHANGELOG.md
+
+      - name: Commit and tag
+        run: |
+          VERSION=${{ steps.version.outputs.new_version }}
+
+          git add CHANGELOG.md
+          git commit -m "release: v$VERSION"
+          git tag "v$VERSION"
+
+      - name: Push changes
+        run: |
+          VERSION=${{ steps.version.outputs.new_version }}
+          git push origin main
+          git push origin "v$VERSION"
 
       - name: Create release archives
         run: |
-          VERSION=${{ env.VERSION }}
+          VERSION=${{ steps.version.outputs.new_version }}
           ARCHIVE_NAME="claude-jail-${VERSION}"
 
           # Create a clean directory with release files
           mkdir -p "$ARCHIVE_NAME"
 
-          # Copy release files (exclude dev files)
+          # Copy release files (exclude dev files like scripts/, tests/, .github/)
           cp -r bin lib profiles "$ARCHIVE_NAME/"
           cp claude-jail.plugin.zsh "$ARCHIVE_NAME/"
           cp install.sh "$ARCHIVE_NAME/"
-          cp VERSION LICENSE README.md "$ARCHIVE_NAME/" 2>/dev/null || cp VERSION README.md "$ARCHIVE_NAME/"
+          cp LICENSE README.md CHANGELOG.md "$ARCHIVE_NAME/" 2>/dev/null || cp README.md CHANGELOG.md "$ARCHIVE_NAME/"
 
           # Create tarball
           tar -czvf "${ARCHIVE_NAME}.tar.gz" "$ARCHIVE_NAME"
@@ -85,10 +184,12 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.version.outputs.new_version }}
           draft: true
-          body_path: release_notes.md
+          body_path: /tmp/release_notes.md
+          generate_release_notes: true
           files: |
-            claude-jail-${{ env.VERSION }}.tar.gz
-            claude-jail-${{ env.VERSION }}.zip
+            claude-jail-${{ steps.version.outputs.new_version }}.tar.gz
+            claude-jail-${{ steps.version.outputs.new_version }}.zip
             checksums.txt
           fail_on_unmatched_files: true
