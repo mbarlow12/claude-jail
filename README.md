@@ -32,9 +32,29 @@ sudo dnf install bubblewrap
 
 ## Installation
 
+### Quick Install (recommended)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/mbarlow12/claude-jail/main/install-remote.sh | bash
+```
+
+Then add to your `~/.zshrc`:
+
+```zsh
+plugins=(... claude-jail)
+```
+
+### Pin to Specific Version
+
+```bash
+VERSION=v0.1.0 curl -sSL https://raw.githubusercontent.com/mbarlow12/claude-jail/main/install-remote.sh | bash
+```
+
+### Manual Install (from git)
+
 ```bash
 # Clone to omz custom plugins
-git clone https://github.com/YOUR_USERNAME/claude-jail.git \
+git clone https://github.com/mbarlow12/claude-jail.git \
     ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/claude-jail
 
 # Enable in ~/.zshrc
@@ -42,6 +62,12 @@ plugins=(... claude-jail)
 
 # Reload
 source ~/.zshrc
+```
+
+### Check Version
+
+```bash
+claude-jail --version
 ```
 
 ## Usage

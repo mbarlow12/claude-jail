@@ -3,6 +3,7 @@
 
 0="${${ZERO:-${0:#$ZSH_ARGZERO}}:-${(%):-%N}}"
 typeset -g _CJ_ROOT="${0:A:h}"
+typeset -g _CJ_VERSION="$(cat "$_CJ_ROOT/VERSION" 2>/dev/null || echo "unknown")"
 
 source "$_CJ_ROOT/lib/bwrap.zsh"
 source "$_CJ_ROOT/lib/config.zsh"
@@ -35,6 +36,7 @@ claude-jail() {
             --ro)           cli_ro+=("$2"); shift 2 ;;
             --rw)           cli_rw+=("$2"); shift 2 ;;
             -h|--help)      _claude_jail_help; return 0 ;;
+            -V|--version)   echo "claude-jail $_CJ_VERSION"; return 0 ;;
             --list-profiles) cj::profile::list; return 0 ;;
             --show-config)  cj::config::show; return 0 ;;
             --dry-run)      dry_run=true; shift ;;
@@ -124,7 +126,7 @@ claude-jail() {
     [[ "$profile" == "paranoid" ]] && chdir_path="/work"
     
     if [[ "$verbose" == true ]]; then
-        echo "🔒 claude-jail"
+        echo "🔒 claude-jail v$_CJ_VERSION"
         echo "   Profile: $profile"
         echo "   Project: $project_dir"
         echo "   Sandbox: $sandbox_home"
@@ -209,6 +211,7 @@ claude-jail-debug() {
     cj::env::passthrough
     cj::chdir "$chdir_path"
 
+    echo "# claude-jail v$_CJ_VERSION"
     echo "# Profile: $profile"
     echo "# Project: $project_dir"
     echo "# Sandbox: $sandbox_home"
@@ -237,6 +240,7 @@ OPTIONS
     -d, --dir <PATH>      Project directory (default: cwd)
     -p, --profile <NAME>  Isolation profile (default: standard)
     -v, --verbose         Show sandbox info on start
+    -V, --version         Show version
     --network             Force enable network
     --no-network          Disable network access
     --ro <PATH>           Add read-only path (can repeat)

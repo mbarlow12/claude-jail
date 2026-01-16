@@ -1,0 +1,105 @@
+# Release workflow - creates GitHub releases on tag push
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for changelog generation
+
+      - name: Validate tag matches VERSION file
+        run: |
+          VERSION_FILE=$(cat VERSION)
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          if [[ "$VERSION_FILE" != "$TAG_VERSION" ]]; then
+            echo "ERROR: Tag v$TAG_VERSION doesn't match VERSION file ($VERSION_FILE)"
+            echo "Please update VERSION file before tagging."
+            exit 1
+          fi
+          echo "Version validated: $VERSION_FILE"
+
+      - name: Get previous tag
+        id: prev_tag
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          echo "prev_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+          echo "Previous tag: $PREV_TAG"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          PREV_TAG="${{ steps.prev_tag.outputs.prev_tag }}"
+
+          echo "## What's Changed" > changelog.md
+          echo "" >> changelog.md
+
+          if [[ -n "$PREV_TAG" ]]; then
+            # Get commits since previous tag
+            git log --pretty=format:"* %s (%h)" "$PREV_TAG"..HEAD >> changelog.md
+            echo "" >> changelog.md
+            echo "" >> changelog.md
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/$PREV_TAG...$VERSION" >> changelog.md
+          else
+            # First release - all commits
+            git log --pretty=format:"* %s (%h)" >> changelog.md
+            echo "" >> changelog.md
+            echo "" >> changelog.md
+            echo "**First release!**" >> changelog.md
+          fi
+
+          echo "Generated changelog:"
+          cat changelog.md
+
+      - name: Create release tarball
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          RELEASE_NAME="claude-jail-$VERSION"
+
+          # Create a clean directory with release files
+          mkdir -p "$RELEASE_NAME"
+
+          # Copy core files (works for both zsh and bash versions)
+          cp -r lib "$RELEASE_NAME/" 2>/dev/null || true
+          cp -r profiles "$RELEASE_NAME/" 2>/dev/null || true
+          cp -r bin "$RELEASE_NAME/" 2>/dev/null || true
+          cp claude-jail.plugin.zsh "$RELEASE_NAME/" 2>/dev/null || true
+          cp install.sh "$RELEASE_NAME/" 2>/dev/null || true
+          cp VERSION "$RELEASE_NAME/"
+          cp README.md "$RELEASE_NAME/"
+          cp LICENSE "$RELEASE_NAME/" 2>/dev/null || true
+
+          # Create tarball
+          tar -czvf "$RELEASE_NAME.tar.gz" "$RELEASE_NAME"
+
+          # Create zip for Windows users
+          zip -r "$RELEASE_NAME.zip" "$RELEASE_NAME"
+
+          echo "Created: $RELEASE_NAME.tar.gz and $RELEASE_NAME.zip"
+          ls -la "$RELEASE_NAME".*
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "claude-jail ${{ github.ref_name }}"
+          body_path: changelog.md
+          files: |
+            claude-jail-*.tar.gz
+            claude-jail-*.zip
+          draft: false
+          prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
