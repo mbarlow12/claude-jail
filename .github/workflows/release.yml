@@ -27,46 +27,34 @@ jobs:
           fi
           echo "VERSION=$VERSION_FILE" >> $GITHUB_ENV
 
-      - name: Generate changelog
+      - name: Extract changelog for version
         id: changelog
         run: |
-          # Get previous tag
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          VERSION=${{ env.VERSION }}
 
-          echo "Previous tag: $PREV_TAG"
-          echo "Current tag: $GITHUB_REF_NAME"
-
-          # Generate changelog
-          {
-            echo "## What's Changed"
-            echo ""
-
-            if [[ -n "$PREV_TAG" ]]; then
-              # Group commits by type
-              echo "### Features"
-              git log --pretty=format:"- %s (%h)" "$PREV_TAG"..HEAD --grep="^feat" || true
+          # Extract the section for this version from CHANGELOG.md
+          # Looks for ## [X.Y.Z] and extracts until the next ## [
+          if grep -q "## \[${VERSION}\]" CHANGELOG.md; then
+            sed -n "/## \[${VERSION}\]/,/## \[/p" CHANGELOG.md | sed '$d' > release_notes.md
+          else
+            # Fallback: generate from commits
+            PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+            {
+              echo "## What's Changed"
+              echo ""
+              if [[ -n "$PREV_TAG" ]]; then
+                git log --pretty=format:"- %s (%h)" "$PREV_TAG"..HEAD
+              else
+                git log --pretty=format:"- %s (%h)"
+              fi
               echo ""
               echo ""
+              echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG:-$(git rev-list --max-parents=0 HEAD)}...$GITHUB_REF_NAME"
+            } > release_notes.md
+          fi
 
-              echo "### Bug Fixes"
-              git log --pretty=format:"- %s (%h)" "$PREV_TAG"..HEAD --grep="^fix" || true
-              echo ""
-              echo ""
-
-              echo "### Other Changes"
-              git log --pretty=format:"- %s (%h)" "$PREV_TAG"..HEAD --grep="^feat" --grep="^fix" --invert-grep || true
-            else
-              echo "Initial release"
-              echo ""
-              git log --pretty=format:"- %s (%h)" HEAD || true
-            fi
-
-            echo ""
-            echo ""
-            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG:-$(git rev-list --max-parents=0 HEAD)}...$GITHUB_REF_NAME"
-          } > changelog.md
-
-          cat changelog.md
+          echo "Release notes:"
+          cat release_notes.md
 
       - name: Create release archives
         run: |
@@ -77,7 +65,7 @@ jobs:
           mkdir -p "$ARCHIVE_NAME"
 
           # Copy release files (exclude dev files)
-          cp -r bin lib profiles scripts "$ARCHIVE_NAME/"
+          cp -r bin lib profiles "$ARCHIVE_NAME/"
           cp claude-jail.plugin.zsh "$ARCHIVE_NAME/"
           cp install.sh "$ARCHIVE_NAME/"
           cp VERSION LICENSE README.md "$ARCHIVE_NAME/" 2>/dev/null || cp VERSION README.md "$ARCHIVE_NAME/"
@@ -98,7 +86,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          body_path: changelog.md
+          body_path: release_notes.md
           files: |
             claude-jail-${{ env.VERSION }}.tar.gz
             claude-jail-${{ env.VERSION }}.zip
