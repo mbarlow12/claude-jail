@@ -159,7 +159,8 @@ find_unreleased_line() {
 find_next_section_line() {
     local unreleased_line="$1"
     # Find the next ## [ line after Unreleased
-    tail -n +"$((unreleased_line + 1))" "$CHANGELOG_FILE" | grep -n "^## \[" | head -1 | cut -d: -f1
+    # Use || true to prevent grep from failing when no match is found
+    tail -n +"$((unreleased_line + 1))" "$CHANGELOG_FILE" | grep -n "^## \[" | head -1 | cut -d: -f1 || true
 }
 
 # Update CHANGELOG.md with new content
