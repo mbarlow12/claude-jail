@@ -7,8 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Initial release of claude-jail: a bubblewrap sandbox for running Claude Code in isolation. Includes standalone bash CLI, Zsh plugin, four security profiles, and automated release tooling.
+## [0.1.0] - 2026-01-16
 
+Initial release of claude-jail: a bubblewrap sandbox for running Claude Code in isolation. Includes standalone bash CLI, Zsh plugin, four security profiles, and automated release tooling.
 ### Added
 - Core bubblewrap sandbox with four isolation profiles (minimal, standard, dev, paranoid) ([8bb7395](https://github.com/mbarlow12/claude-jail/commit/8bb7395))
 - Standalone bash script `bin/claude-jail` for non-Zsh users ([8bb7395](https://github.com/mbarlow12/claude-jail/commit/8bb7395))
@@ -18,4 +19,4 @@ Initial release of claude-jail: a bubblewrap sandbox for running Claude Code in 
 - Release workflow with version bumping and changelog management ([28d7389](https://github.com/mbarlow12/claude-jail/commit/28d7389))
 - Changelog helper script `scripts/changelog` ([10e8c7d](https://github.com/mbarlow12/claude-jail/commit/10e8c7d))
 - Comprehensive test suite with bats-core ([54715a1](https://github.com/mbarlow12/claude-jail/commit/54715a1))
-- CI/CD with GitHub Actions ([4ee9492](https://github.com/mbarlow12/claude-jail/commit/4ee9492))
+
