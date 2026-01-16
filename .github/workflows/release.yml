@@ -103,10 +103,8 @@ jobs:
           DATE=$(date +%Y-%m-%d)
           UNRELEASED_CONTENT=$(cat /tmp/unreleased_content.md)
 
-          # Create the new version section
-          NEW_SECTION="## [$VERSION] - $DATE
-
-$UNRELEASED_CONTENT"
+          # Create the new version section header
+          VERSION_HEADER="## [$VERSION] - $DATE"
 
           # Update CHANGELOG.md:
           # 1. Keep everything up to and including "## [Unreleased]"
@@ -128,7 +126,9 @@ $UNRELEASED_CONTENT"
             head -n "$UNRELEASED_LINE" CHANGELOG.md
             echo ""
             # New version section
-            echo "$NEW_SECTION"
+            echo "$VERSION_HEADER"
+            echo ""
+            echo "$UNRELEASED_CONTENT"
             echo ""
             # Rest of file (previous versions)
             if [[ -n "$NEXT_VERSION_LINE" ]]; then
