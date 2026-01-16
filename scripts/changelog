@@ -42,13 +42,34 @@ get_last_tag() {
     git describe --tags --abbrev=0 2>/dev/null || echo ""
 }
 
+# Get GitHub repo URL from git remote
+get_repo_url() {
+    local remote_url
+    remote_url=$(git remote get-url origin 2>/dev/null || echo "")
+
+    # Convert SSH URL to HTTPS URL
+    # git@github.com:user/repo.git -> https://github.com/user/repo
+    if [[ "$remote_url" =~ ^git@github\.com:(.+)\.git$ ]]; then
+        echo "https://github.com/${BASH_REMATCH[1]}"
+    elif [[ "$remote_url" =~ ^git@github\.com:(.+)$ ]]; then
+        echo "https://github.com/${BASH_REMATCH[1]}"
+    elif [[ "$remote_url" =~ ^https://github\.com/(.+)\.git$ ]]; then
+        echo "https://github.com/${BASH_REMATCH[1]}"
+    elif [[ "$remote_url" =~ ^https://github\.com/(.+)$ ]]; then
+        echo "https://github.com/${BASH_REMATCH[1]}"
+    else
+        echo ""
+    fi
+}
+
 # Get commits since last tag (or all commits if no tag)
+# Format: hash<TAB>subject
 get_commits() {
     local last_tag="$1"
     if [[ -n "$last_tag" ]]; then
-        git log --pretty=format:"%s" "$last_tag"..HEAD
+        git log --pretty=format:"%h	%s" "$last_tag"..HEAD
     else
-        git log --pretty=format:"%s"
+        git log --pretty=format:"%h	%s"
     fi
 }
 
@@ -81,6 +102,8 @@ clean_message() {
 # Generate changelog content
 generate_changelog() {
     local last_tag="$1"
+    local repo_url
+    repo_url=$(get_repo_url)
 
     declare -A categories
     categories=(
@@ -91,18 +114,26 @@ generate_changelog() {
         ["Other"]=""
     )
 
-    while IFS= read -r commit; do
-        [[ -z "$commit" ]] && continue
+    while IFS=$'\t' read -r hash msg; do
+        [[ -z "$msg" ]] && continue
 
         local category
-        category=$(categorize_commit "$commit")
+        category=$(categorize_commit "$msg")
         local clean_msg
-        clean_msg=$(clean_message "$commit")
+        clean_msg=$(clean_message "$msg")
+
+        # Format entry with commit link if repo URL is available
+        local entry
+        if [[ -n "$repo_url" ]]; then
+            entry="- $clean_msg ([$hash]($repo_url/commit/$hash))"
+        else
+            entry="- $clean_msg ($hash)"
+        fi
 
         if [[ -n "${categories[$category]}" ]]; then
-            categories[$category]+=$'\n'"- $clean_msg"
+            categories[$category]+=$'\n'"$entry"
         else
-            categories[$category]="- $clean_msg"
+            categories[$category]="$entry"
         fi
     done < <(get_commits "$last_tag")
 
