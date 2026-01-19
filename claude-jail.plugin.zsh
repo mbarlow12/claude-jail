@@ -28,6 +28,12 @@ if (( $+functions[zstyle] )); then
     if [[ -z "$CJ_SANDBOX_HOME" ]]; then
         zstyle -s ':claude-jail:*' sandbox-home _zs_value 2>/dev/null && export CJ_SANDBOX_HOME="$_zs_value"
     fi
+    if [[ -z "$CJ_SANDBOX_NAME" ]]; then
+        zstyle -s ':claude-jail:*' sandbox-name _zs_value 2>/dev/null && export CJ_SANDBOX_NAME="$_zs_value"
+    fi
+    if [[ -z "$CJ_GIT_WORKTREE_RO" ]]; then
+        zstyle -b ':claude-jail:*' git-worktree-ro _zs_value 2>/dev/null && export CJ_GIT_WORKTREE_RO="$([[ $_zs_value == yes ]] && echo true || echo false)"
+    fi
     if [[ -z "$CJ_COPY_CLAUDE_CONFIG" ]]; then
         zstyle -b ':claude-jail:*' copy-claude-config _zs_value 2>/dev/null && export CJ_COPY_CLAUDE_CONFIG="$([[ $_zs_value == yes ]] && echo true || echo false)"
     fi
@@ -128,6 +134,10 @@ if [[ -n "$ZSH_VERSION" ]]; then
             '--no-network[Disable network]' \
             '*--ro[Read-only path]:path:_files -/' \
             '*--rw[Read-write path]:path:_files -/' \
+            '--sandbox-home[Parent directory for sandbox]:directory:_files -/' \
+            '--sandbox-name[Sandbox directory name]:name:' \
+            '--git-root[Main git repo root for worktrees]:directory:_files -/' \
+            '--git-ro[Bind main .git read-only]' \
             '--list-profiles[List profiles]' \
             '--show-config[Show configuration]' \
             '--help-config[Show configuration help]' \

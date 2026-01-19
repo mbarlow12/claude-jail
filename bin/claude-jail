@@ -35,6 +35,10 @@ OPTIONS
     --no-network          Disable network access
     --ro <PATH>           Add read-only path (can repeat)
     --rw <PATH>           Add read-write path (can repeat)
+    --sandbox-home <PATH> Parent directory for sandbox (default: cwd)
+    --sandbox-name <NAME> Sandbox directory name (default: .claude-sandbox)
+    --git-root <PATH>     Manually specify main git repo root (for worktrees)
+    --git-ro              Bind main .git read-only (default: read-write)
     --list-profiles       List available profiles
     --show-config         Show current configuration
     --help-config         Show configuration help
@@ -59,6 +63,20 @@ COMMANDS
     claude-jail clean     Remove .claude-sandbox directory
     claude-jail debug     Print bwrap command without running
 
+GIT WORKTREE SUPPORT
+    claude-jail auto-detects git worktrees and binds the main .git directory.
+    This enables full git operations (commit, push, etc.) from worktrees.
+
+    # Run from parent directory with worktrees
+    cd bean-barn
+    claude-jail -d feat-ty-lsp   # Auto-binds ../main/.git
+
+    # Override if auto-detection fails
+    claude-jail -d feat-ty-lsp --git-root ./main
+
+    # Read-only for extra safety (limits some git operations)
+    claude-jail -d feat-ty-lsp --git-ro
+
 EXAMPLES
     claude-jail                       # Run in current directory
     claude-jail -d ~/project          # Run in specific directory
@@ -66,6 +84,14 @@ EXAMPLES
     claude-jail -v -- --print "hi"    # Verbose, pass args to claude
     claude-jail debug                 # See what bwrap would run
     claude-jail shell                 # Test sandbox interactively
+
+    # Shared sandbox between worktrees
+    cd ~/repos/myproject-worktrees
+    claude-jail -d main               # Sandbox at ./cwd/.claude-sandbox
+    claude-jail -d feat-branch        # Same sandbox (shared)
+
+    # Custom sandbox location
+    claude-jail --sandbox-home /tmp --sandbox-name my-sandbox
 
 SECURITY
     Inside the sandbox:
@@ -83,6 +109,10 @@ _claude_jail_main() {
     local profile=""
     local verbose=""
     local network=""
+    local sandbox_home_override=""
+    local sandbox_name_override=""
+    local git_root_override=""
+    local git_ro=""
     local -a cli_ro=()
     local -a cli_rw=()
     local -a claude_args=()
@@ -101,6 +131,10 @@ _claude_jail_main() {
             --network)      network=true; shift ;;
             --ro)           cli_ro+=("$2"); shift 2 ;;
             --rw)           cli_rw+=("$2"); shift 2 ;;
+            --sandbox-home) sandbox_home_override="$2"; shift 2 ;;
+            --sandbox-name) sandbox_name_override="$2"; shift 2 ;;
+            --git-root)     git_root_override="$2"; shift 2 ;;
+            --git-ro)       git_ro=true; shift ;;
             --)             shift; claude_args+=("$@"); break ;;
             -*)             echo "Unknown option: $1" >&2; return 1 ;;
             *)              claude_args+=("$1"); shift ;;
@@ -129,13 +163,29 @@ _claude_jail_main() {
         return 1
     fi
 
-    local sandbox_home_name
-    sandbox_home_name="$(cj::config::get sandbox_home .claude-sandbox)"
-    local sandbox_home="$project_dir/$sandbox_home_name"
+    # Resolve sandbox home using new flexible resolution
+    local sandbox_home
+    sandbox_home="$(cj::sandbox::resolve_home "${sandbox_home_override:-}" "${sandbox_name_override:-}")"
+
+    # Validate sandbox location
+    local config_source=""
+    if cj::config::is_user_level_config && [[ -n "$(cj::config::get sandbox_home)" ]]; then
+        config_source="user"
+    fi
+    if ! cj::sandbox::validate_home_location "$sandbox_home" "$config_source"; then
+        return 1
+    fi
 
     cj::sandbox::init "$project_dir" "$sandbox_home" "$profile"
     cj::worktree::detect_config "$project_dir" "${verbose:-false}"
     cj::sandbox::bind_credentials "$sandbox_home" "$profile" || true
+
+    # Detect and bind git worktree's main .git directory
+    local git_worktree_ro="${git_ro:-$(cj::config::get_bool git_worktree_ro false && echo true || echo false)}"
+    if [[ -n "$git_root_override" ]]; then
+        git_root_override="$(realpath "$git_root_override" 2>/dev/null || echo "$git_root_override")"
+    fi
+    cj::git::detect_worktree "$project_dir" "$git_worktree_ro" "${verbose:-false}" "$git_root_override" || true
 
     # Pass through environment variables (git, proxy, API key)
     cj::env::passthrough
@@ -189,11 +239,12 @@ _claude_jail_shell() {
 
     project_dir="$(realpath "$project_dir" 2>/dev/null || echo "$project_dir")"
     local sandbox_home
-    sandbox_home="$project_dir/$(cj::config::get sandbox_home .claude-sandbox)"
+    sandbox_home="$(cj::sandbox::resolve_home)"
 
     cj::sandbox::init "$project_dir" "$sandbox_home" "$profile"
     cj::sandbox::bind_credentials "$sandbox_home" "$profile" || true
     cj::env::passthrough
+    cj::git::detect_worktree "$project_dir" "$(cj::config::get_bool git_worktree_ro false && echo true || echo false)" false "" || true
 
     local chdir_path
     chdir_path="$(cj::sandbox::chdir_path "$project_dir" "$profile")"
@@ -207,7 +258,7 @@ _claude_jail_shell() {
 _claude_jail_clean() {
     local project_dir="${1:-$(pwd)}"
     local sandbox_home
-    sandbox_home="$project_dir/$(cj::config::get sandbox_home .claude-sandbox)"
+    sandbox_home="$(cj::sandbox::resolve_home)"
 
     if [[ -d "$sandbox_home" ]]; then
         echo "Removing $sandbox_home ..."
@@ -224,7 +275,7 @@ _claude_jail_debug() {
 
     project_dir="$(realpath "$project_dir" 2>/dev/null || echo "$project_dir")"
     local sandbox_home
-    sandbox_home="$project_dir/$(cj::config::get sandbox_home .claude-sandbox)"
+    sandbox_home="$(cj::sandbox::resolve_home)"
 
     # Create sandbox directories so bind mounts don't fail (but don't copy config)
     cj::sandbox::create_dirs "$sandbox_home"
@@ -234,6 +285,7 @@ _claude_jail_debug() {
     cj::worktree::detect_config "$project_dir" false
     cj::sandbox::bind_credentials "$sandbox_home" "$profile" || true
     cj::env::passthrough
+    cj::git::detect_worktree "$project_dir" "$(cj::config::get_bool git_worktree_ro false && echo true || echo false)" false "" || true
 
     local chdir_path
     chdir_path="$(cj::sandbox::chdir_path "$project_dir" "$profile")"

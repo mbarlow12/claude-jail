@@ -2,6 +2,114 @@
 # lib/sandbox.sh - Sandbox setup and management utilities (pure bash)
 # Provides shared functionality for sandbox initialization and configuration
 
+# =============================================================================
+# Sandbox home resolution and validation
+# =============================================================================
+
+# Resolve full sandbox path from configuration
+# Uses CJ_SANDBOX_HOME (parent directory) and CJ_SANDBOX_NAME (directory name)
+# Usage: cj::sandbox::resolve_home [parent_override] [name_override]
+#   parent_override: Optional parent directory (default: cwd)
+#   name_override: Optional sandbox name (default: from config or .claude-sandbox)
+# Outputs: Full absolute path to sandbox directory
+cj::sandbox::resolve_home() {
+    local parent_override="${1:-}"
+    local name_override="${2:-}"
+    local sandbox_parent sandbox_name
+    local sandbox_home_config sandbox_name_config
+
+    # Get config values
+    sandbox_home_config="$(cj::config::get sandbox_home "")"
+    sandbox_name_config="$(cj::config::get sandbox_name ".claude-sandbox")"
+
+    # Determine sandbox parent directory
+    if [[ -n "$parent_override" ]]; then
+        sandbox_parent="$parent_override"
+    elif [[ -n "$sandbox_home_config" && "$sandbox_home_config" == /* ]]; then
+        # Absolute path in sandbox_home config - use as parent
+        sandbox_parent="$sandbox_home_config"
+    else
+        # Default to cwd
+        sandbox_parent="$(pwd)"
+    fi
+
+    # Determine sandbox directory name
+    if [[ -n "$name_override" ]]; then
+        sandbox_name="$name_override"
+    elif [[ -n "$sandbox_home_config" && "$sandbox_home_config" != /* ]]; then
+        # Relative path in sandbox_home config (backward compat) - use as name
+        sandbox_name="$sandbox_home_config"
+    else
+        # Use sandbox_name config
+        sandbox_name="$sandbox_name_config"
+    fi
+
+    # Resolve parent to absolute path if needed
+    if [[ "$sandbox_parent" != /* ]]; then
+        sandbox_parent="$(cd "$sandbox_parent" 2>/dev/null && pwd)" || sandbox_parent="$(pwd)/$sandbox_parent"
+    fi
+
+    echo "$sandbox_parent/$sandbox_name"
+}
+
+# Validate sandbox home location for security
+# Rejects system directories and warns about user-level config issues
+# Usage: cj::sandbox::validate_home_location <sandbox_path> [config_source]
+#   sandbox_path: Full path to sandbox directory
+#   config_source: Optional source of config ("user" for ~/.config/claude-jail/config)
+# Returns: 0 if valid, 1 if invalid (with error to stderr)
+cj::sandbox::validate_home_location() {
+    local sandbox_path="$1"
+    local config_source="${2:-}"
+
+    [[ -z "$sandbox_path" ]] && {
+        echo "Error: Sandbox path cannot be empty" >&2
+        return 1
+    }
+
+    # Normalize path: remove trailing slashes and resolve to canonical form
+    local normalized_path
+    # Remove trailing slashes
+    normalized_path="${sandbox_path%/}"
+    # Handle root specially
+    [[ -z "$normalized_path" ]] && normalized_path="/"
+
+    # List of forbidden system directories
+    local -a forbidden_dirs=(
+        "/"
+        "/etc"
+        "/home"
+        "/root"
+        "/usr"
+        "/bin"
+        "/sbin"
+        "/lib"
+        "/lib64"
+        "/var"
+        "/tmp"
+        "/boot"
+        "/dev"
+        "/proc"
+        "/sys"
+    )
+
+    local forbidden
+    for forbidden in "${forbidden_dirs[@]}"; do
+        if [[ "$normalized_path" == "$forbidden" ]]; then
+            echo "Error: Cannot use system directory as sandbox: $sandbox_path" >&2
+            return 1
+        fi
+    done
+
+    # Warn if sandbox_home is set in user-level config (likely a mistake)
+    if [[ "$config_source" == "user" ]]; then
+        echo "Warning: CJ_SANDBOX_HOME set in user-level config (~/.config/claude-jail/config)" >&2
+        echo "         This affects all projects. Consider using project-level .claude-jail.conf instead." >&2
+    fi
+
+    return 0
+}
+
 # Create standard sandbox directory structure
 # Usage: cj::sandbox::create_dirs <sandbox_home>
 cj::sandbox::create_dirs() {

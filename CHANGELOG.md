@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Git worktree support with automatic detection and main `.git` binding (`--git-root`, `--git-ro`)
+- Configurable sandbox location via `CJ_SANDBOX_HOME` and `CJ_SANDBOX_NAME`
+
 ## [0.1.0] - 2026-01-16
 
 Initial release of claude-jail: a bubblewrap sandbox for running Claude Code in isolation. Includes standalone bash CLI, Zsh plugin, four security profiles, and automated release tooling.
