@@ -44,7 +44,9 @@ claude-jail.plugin.zsh     # Optional: Zsh plugin (thin wrapper + completion)
 
 **Profile functions** receive `(project_dir, sandbox_home)` and build the bwrap command by calling `cj::*` primitives. Register with `cj::profile::register <name> <function>`.
 
-**Sandbox home** lives at `$project_dir/.claude-sandbox/` (configurable). Claude's `~/.claude` config is copied there on first run.
+**Sandbox home** lives at `$cwd/.claude-sandbox/` by default (configurable via `CJ_SANDBOX_HOME` and `CJ_SANDBOX_NAME`). Claude's `~/.claude` config is copied there on first run.
+
+**Git worktree support**: Auto-detects git worktrees and binds the main `.git` directory, enabling full git operations from worktrees.
 
 **Configuration layers** (highest to lowest priority):
 1. CLI arguments (`--profile`, `--ro`, etc.)
@@ -90,8 +92,10 @@ Create `~/.config/claude-jail/config`:
 ```bash
 CJ_PROFILE=standard
 CJ_NETWORK=true
-CJ_SANDBOX_HOME=.claude-sandbox
+CJ_SANDBOX_HOME=/path/to/sandboxes  # Parent directory for sandbox (default: cwd)
+CJ_SANDBOX_NAME=.claude-sandbox     # Sandbox directory name
 CJ_COPY_CLAUDE_CONFIG=true
+CJ_GIT_WORKTREE_RO=false            # Bind main .git read-only in worktrees
 CJ_EXTRA_RO=(/usr/local/mylib /opt/tools)
 CJ_EXTRA_RW=(/tmp/scratch)
 ```
@@ -103,6 +107,40 @@ export CJ_PROFILE=paranoid
 export CJ_EXTRA_RO="/usr/local/mylib:/opt/tools"
 export CJ_NETWORK=false
 claude-jail -d ~/project
+```
+
+### Git Worktree Support
+
+claude-jail auto-detects git worktrees and binds the main `.git` directory:
+
+```bash
+# Layout:
+# bean-barn/
+#   main/        <- primary clone
+#   feat-branch/ <- worktree
+
+cd bean-barn
+claude-jail -d feat-branch   # Auto-binds main/.git
+claude-jail -d main          # .git is part of project, no extra binding
+
+# Manual override if auto-detection fails
+claude-jail -d feat-branch --git-root ./main
+
+# Read-only for extra safety (limits some git operations)
+claude-jail -d feat-branch --git-ro
+```
+
+### Sandbox Location
+
+By default, sandbox is created at `$cwd/.claude-sandbox`. This enables sharing sandboxes between worktrees:
+
+```bash
+cd bean-barn
+claude-jail -d main          # Sandbox: bean-barn/.claude-sandbox
+claude-jail -d feat-branch   # Same sandbox (shared state)
+
+# Override sandbox location
+claude-jail --sandbox-home /tmp --sandbox-name my-sandbox
 ```
 
 ## Testing

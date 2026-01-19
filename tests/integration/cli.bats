@@ -89,8 +89,11 @@ teardown() {
     local project_dir="$TEST_TMPDIR/project"
     mkdir -p "$project_dir"
 
-    "$PROJECT_ROOT/bin/claude-jail" debug "$project_dir" >/dev/null
+    # Run from project dir so sandbox is created there
+    cd "$project_dir"
+    "$PROJECT_ROOT/bin/claude-jail" debug . >/dev/null
 
+    # Sandbox is created at cwd (now project_dir)
     assert [ -d "$project_dir/.claude-sandbox/.config" ]
     assert [ -d "$project_dir/.claude-sandbox/.claude" ]
 }
@@ -104,7 +107,9 @@ teardown() {
     mkdir -p "$project_dir/.claude-sandbox"
     touch "$project_dir/.claude-sandbox/testfile"
 
-    run "$PROJECT_ROOT/bin/claude-jail" clean "$project_dir"
+    # Run from project dir so it finds the sandbox there
+    cd "$project_dir"
+    run "$PROJECT_ROOT/bin/claude-jail" clean .
 
     assert_success
     assert_output --partial "Removing"
@@ -112,10 +117,12 @@ teardown() {
 }
 
 @test "claude-jail clean handles nonexistent sandbox" {
-    local project_dir="$TEST_TMPDIR/project"
+    local project_dir="$TEST_TMPDIR/project-without-sandbox"
     mkdir -p "$project_dir"
 
-    run "$PROJECT_ROOT/bin/claude-jail" clean "$project_dir"
+    # Run from project dir so it looks for sandbox there
+    cd "$project_dir"
+    run "$PROJECT_ROOT/bin/claude-jail" clean .
 
     assert_success
     assert_output --partial "No sandbox found"
@@ -207,13 +214,25 @@ teardown() {
 # Directory validation tests
 # =============================================================================
 
-@test "debug command works with new project directory" {
-    # debug creates sandbox dirs and shows what bwrap command WOULD run
+@test "debug command requires existing project directory" {
+    # debug needs to bind the project directory, so it must exist
     local new_project="$TEST_TMPDIR/new-project-that-doesnt-exist-yet"
 
     run "$PROJECT_ROOT/bin/claude-jail" debug "$new_project"
 
+    # Should fail because project directory doesn't exist
+    assert_failure
+}
+
+@test "debug command works with existing project directory" {
+    # debug creates sandbox dirs and shows what bwrap command WOULD run
+    local project_dir="$TEST_TMPDIR/existing-project"
+    mkdir -p "$project_dir"
+
+    cd "$project_dir"
+    run "$PROJECT_ROOT/bin/claude-jail" debug .
+
     assert_success
     assert_output --partial "bwrap"
-    assert_output --partial "$new_project"
+    assert_output --partial "$project_dir"
 }

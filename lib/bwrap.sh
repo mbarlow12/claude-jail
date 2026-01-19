@@ -209,6 +209,124 @@ cj::worktree::detect_config() {
     fi
 }
 
+# =============================================================================
+# Git worktree detection functions
+# =============================================================================
+
+# Get the main repository root from a worktree
+# For worktrees, follows gitdir -> commondir to find main .git
+# For primary clones, returns the project directory itself
+# Usage: cj::git::get_main_repo_root <project_dir>
+# Outputs: Path to main repository root (containing real .git directory)
+# Returns: 0 if git repo found, 1 otherwise
+cj::git::get_main_repo_root() {
+    local project_dir="$1"
+    local git_path="$project_dir/.git"
+
+    [[ -z "$project_dir" ]] && return 1
+
+    # Not a git repo
+    [[ ! -e "$git_path" ]] && return 1
+
+    # Primary clone - .git is a directory
+    if [[ -d "$git_path" ]]; then
+        echo "$project_dir"
+        return 0
+    fi
+
+    # Worktree - .git is a file containing gitdir path
+    if [[ -f "$git_path" ]]; then
+        local gitdir_line gitdir_path commondir_path main_git_dir
+
+        # Parse "gitdir: <path>" from .git file
+        gitdir_line="$(head -n1 "$git_path")"
+        if [[ "$gitdir_line" =~ ^gitdir:\ (.+)$ ]]; then
+            gitdir_path="${BASH_REMATCH[1]}"
+
+            # Resolve relative paths
+            if [[ "$gitdir_path" != /* ]]; then
+                gitdir_path="$(cd "$project_dir" && cd "$(dirname "$gitdir_path")" && pwd)/$(basename "$gitdir_path")"
+            fi
+
+            # Check for commondir file (points to main .git)
+            if [[ -f "$gitdir_path/commondir" ]]; then
+                commondir_path="$(cat "$gitdir_path/commondir")"
+                # Resolve relative commondir path
+                if [[ "$commondir_path" != /* ]]; then
+                    main_git_dir="$(cd "$gitdir_path" && cd "$commondir_path" && pwd)"
+                else
+                    main_git_dir="$commondir_path"
+                fi
+                # Return parent of .git directory
+                echo "$(dirname "$main_git_dir")"
+                return 0
+            fi
+        fi
+    fi
+
+    return 1
+}
+
+# Detect git worktree and bind main .git directory if needed
+# For worktrees, binds the main repository's .git directory
+# For primary clones, no additional binding needed
+# Usage: cj::git::detect_worktree <project_dir> [readonly] [verbose] [manual_git_root]
+#   project_dir: The project directory to check
+#   readonly: "true" to bind read-only (default: "false" for read-write)
+#   verbose: "true" to print debug info (default: "false")
+#   manual_git_root: Optional manual override for main git root
+# Returns: 0 on success, 1 if not a git repo
+cj::git::detect_worktree() {
+    local project_dir="$1"
+    local readonly="${2:-false}"
+    local verbose="${3:-false}"
+    local manual_git_root="${4:-}"
+    local git_path="$project_dir/.git"
+    local main_repo_root main_git_dir
+
+    [[ -z "$project_dir" ]] && return 1
+
+    # Not a git repo
+    [[ ! -e "$git_path" ]] && return 1
+
+    # Use manual override if provided
+    if [[ -n "$manual_git_root" ]]; then
+        main_repo_root="$manual_git_root"
+        if [[ ! -d "$main_repo_root/.git" ]]; then
+            echo "Warning: Manual git root $main_repo_root does not contain .git directory" >&2
+            return 1
+        fi
+    else
+        # Primary clone - .git is a directory, already part of project_dir binding
+        if [[ -d "$git_path" ]]; then
+            [[ "$verbose" == true ]] && echo "   Git: primary clone, .git is part of project"
+            return 0
+        fi
+
+        # Worktree - need to find and bind main .git
+        main_repo_root="$(cj::git::get_main_repo_root "$project_dir")" || return 1
+    fi
+
+    main_git_dir="$main_repo_root/.git"
+
+    # Don't bind if main_git_dir is already inside project_dir (already bound)
+    if [[ "$main_git_dir" == "$project_dir"/* ]]; then
+        [[ "$verbose" == true ]] && echo "   Git: main .git is inside project directory"
+        return 0
+    fi
+
+    # Bind the main .git directory
+    if [[ "$readonly" == true ]]; then
+        [[ "$verbose" == true ]] && echo "   Git: binding $main_git_dir (read-only)"
+        cj::ro_bind "$main_git_dir"
+    else
+        [[ "$verbose" == true ]] && echo "   Git: binding $main_git_dir (read-write)"
+        cj::bind "$main_git_dir"
+    fi
+
+    return 0
+}
+
 cj::build() {
     local -a cmd=(bwrap)
     cmd+=(--die-with-parent --new-session)

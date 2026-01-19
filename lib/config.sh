@@ -15,9 +15,14 @@ declare -gA _CJ_CONFIG=(
     [profile]="standard"
     [network]="true"
     [sandbox_home]=".claude-sandbox"
+    [sandbox_name]=".claude-sandbox"
     [copy_claude_config]="true"
     [verbose]="false"
+    [git_worktree_ro]="false"
 )
+
+# Track which config file was loaded (for warnings)
+declare -g _CJ_CONFIG_SOURCE=""
 
 # User-defined extra paths
 declare -ga _CJ_EXTRA_RO=()
@@ -35,10 +40,22 @@ cj::config::_load_file() {
         return 1
     fi
 
+    # Track config source for warnings
+    _CJ_CONFIG_SOURCE="$config_file"
+
     # Source the config file to load variables
     # shellcheck disable=SC1090
     source "$config_file"
     return 0
+}
+
+# Check if a config option was set in user-level config
+# Usage: cj::config::is_user_level_config
+# Returns: 0 if user-level config loaded, 1 otherwise
+cj::config::is_user_level_config() {
+    local user_config="${XDG_CONFIG_HOME:-$HOME/.config}/claude-jail/config"
+    local home_config="$HOME/.claude-jail.conf"
+    [[ "$_CJ_CONFIG_SOURCE" == "$user_config" || "$_CJ_CONFIG_SOURCE" == "$home_config" ]]
 }
 
 cj::config::init() {
@@ -57,8 +74,10 @@ cj::config::init() {
     [[ -n "${CJ_PROFILE:-}" ]] && _CJ_CONFIG[profile]="$CJ_PROFILE"
     [[ -n "${CJ_NETWORK:-}" ]] && _CJ_CONFIG[network]="$CJ_NETWORK"
     [[ -n "${CJ_SANDBOX_HOME:-}" ]] && _CJ_CONFIG[sandbox_home]="$CJ_SANDBOX_HOME"
+    [[ -n "${CJ_SANDBOX_NAME:-}" ]] && _CJ_CONFIG[sandbox_name]="$CJ_SANDBOX_NAME"
     [[ -n "${CJ_COPY_CLAUDE_CONFIG:-}" ]] && _CJ_CONFIG[copy_claude_config]="$CJ_COPY_CLAUDE_CONFIG"
     [[ -n "${CJ_VERBOSE:-}" ]] && _CJ_CONFIG[verbose]="$CJ_VERBOSE"
+    [[ -n "${CJ_GIT_WORKTREE_RO:-}" ]] && _CJ_CONFIG[git_worktree_ro]="$CJ_GIT_WORKTREE_RO"
 
     # Load extra paths from environment if set
     if [[ -n "${CJ_EXTRA_RO:-}" ]]; then
@@ -123,8 +142,10 @@ cj::config::show() {
     echo "  profile:            $(cj::config::get profile)"
     echo "  network:            $(cj::config::get network)"
     echo "  sandbox-home:       $(cj::config::get sandbox_home)"
+    echo "  sandbox-name:       $(cj::config::get sandbox_name)"
     echo "  copy-claude-config: $(cj::config::get copy_claude_config)"
     echo "  verbose:            $(cj::config::get verbose)"
+    echo "  git-worktree-ro:    $(cj::config::get git_worktree_ro)"
     echo ""
     if [[ ${#_CJ_EXTRA_RO[@]} -gt 0 ]]; then
         echo "Extra read-only paths:"
@@ -157,9 +178,11 @@ claude-jail can be configured using:
 1. Environment variables (highest priority):
    CJ_PROFILE=standard          # Profile to use
    CJ_NETWORK=true              # Enable/disable network
-   CJ_SANDBOX_HOME=.claude-sandbox  # Sandbox directory name
+   CJ_SANDBOX_HOME=/path        # Parent directory for sandbox (default: cwd)
+   CJ_SANDBOX_NAME=.claude-sandbox  # Sandbox directory name
    CJ_COPY_CLAUDE_CONFIG=true   # Copy ~/.claude on first run
    CJ_VERBOSE=false             # Verbose output
+   CJ_GIT_WORKTREE_RO=false     # Bind main .git read-only in worktrees
    CJ_EXTRA_RO=/path1:/path2    # Extra read-only paths (colon-separated)
    CJ_EXTRA_RW=/path1:/path2    # Extra read-write paths (colon-separated)
    CJ_BLOCKED=/path1:/path2     # Blocked paths (colon-separated)
@@ -174,15 +197,28 @@ claude-jail can be configured using:
    ```bash
    CJ_PROFILE=standard
    CJ_NETWORK=true
-   CJ_SANDBOX_HOME=.claude-sandbox
+   CJ_SANDBOX_HOME=/path/to/sandboxes  # Parent directory
+   CJ_SANDBOX_NAME=.claude-sandbox     # Directory name
    CJ_COPY_CLAUDE_CONFIG=true
    CJ_VERBOSE=false
+   CJ_GIT_WORKTREE_RO=false
    CJ_EXTRA_RO=(/path/to/libs /another/path)
    CJ_EXTRA_RW=(/path/to/scratch)
    ```
 
+   NOTE: Setting CJ_SANDBOX_HOME in user-level config (~/.config/claude-jail/config)
+   affects all projects and is usually not what you want. Prefer project-level
+   .claude-jail.conf for project-specific sandbox locations.
+
 3. CLI arguments (override everything):
    --profile, --network, --no-network, --ro, --rw, etc.
+   --sandbox-home, --sandbox-name, --git-root, --git-ro
+
+GIT WORKTREE SUPPORT
+
+claude-jail automatically detects git worktrees and binds the main .git directory.
+This allows full git operations in worktrees. By default, the main .git is bound
+read-write. Use --git-ro or CJ_GIT_WORKTREE_RO=true for read-only binding.
 
 EXAMPLES
 
@@ -200,6 +236,17 @@ claude-jail
 
 # Override via CLI (highest priority)
 CJ_PROFILE=standard claude-jail --profile paranoid  # Uses paranoid
+
+# Worktree example: sandbox shared between worktrees
+cd ~/projects/myrepo-worktrees
+claude-jail -d feat-branch   # Sandbox at ./cwd/.claude-sandbox
+claude-jail -d main          # Same sandbox location (shared)
+
+# Override sandbox location
+claude-jail --sandbox-home /tmp/sandboxes --sandbox-name mysandbox
+
+# Manual git root (if auto-detection fails)
+claude-jail -d feat-branch --git-root ./main
 EOF
 }
 
