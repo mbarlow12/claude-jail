@@ -49,6 +49,33 @@ clod jail -v
 clod jail -- --help
 ```
 
+### Zsh Plugin (Optional)
+
+For shell completions and convenience functions:
+
+**Using Oh My Zsh:**
+
+```bash
+# Link or copy the plugin
+mkdir -p ~/.oh-my-zsh/custom/plugins/clod
+ln -s /path/to/clod-py/clod.plugin.zsh ~/.oh-my-zsh/custom/plugins/clod/clod.plugin.zsh
+
+# Add to ~/.zshrc plugins
+plugins=(... clod)
+```
+
+**Direct sourcing:**
+
+```bash
+# Add to ~/.zshrc
+source /path/to/clod-py/clod.plugin.zsh
+```
+
+The plugin provides:
+- Tab completions for `clod` commands and options
+- `cj` alias for `clod jail` (shorter command)
+- Auto-detects `uv run clod` if clod isn't globally installed
+
 ## How It Works
 
 The `clod jail` command:
