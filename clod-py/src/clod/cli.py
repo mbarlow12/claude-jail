@@ -7,20 +7,28 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import click
 
-from clod.config import ClodSettings, get_sandbox_home
+from clod.config import (
+    ClodSettings,
+    ConfigError,
+    get_sandbox_home,
+    load_settings,
+)
 from clod.sandbox import initialize_sandbox
 
 
 @click.group()
-def cli() -> None:
-    """clod - Minimal bubblewrap sandbox for Claude Code."""
-    pass
-
-
-@cli.command()
+@click.option(
+    "-c",
+    "--config",
+    "config_file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="Use specific config file (skips discovery)",
+)
 @click.option(
     "-d",
     "--dir",
@@ -29,6 +37,31 @@ def cli() -> None:
     default=None,
     help="Project directory (default: current directory)",
 )
+@click.pass_context
+def cli(ctx: click.Context, config_file: Path | None, project_dir: Path | None) -> None:
+    """clod - Minimal bubblewrap sandbox for Claude Code."""
+    # Ensure ctx.obj exists
+    ctx.ensure_object(dict)
+
+    # Resolve project directory
+    if project_dir is None:
+        project_dir = Path.cwd()
+    project_dir = project_dir.resolve()
+
+    # Load settings from config files
+    try:
+        settings = load_settings(project_dir, explicit_config=config_file)
+    except ConfigError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    # Store in context for subcommands
+    ctx.obj["settings"] = settings
+    ctx.obj["project_dir"] = project_dir
+    ctx.obj["config_file"] = config_file
+
+
+@cli.command()
 @click.option(
     "-v",
     "--verbose",
@@ -41,8 +74,9 @@ def cli() -> None:
     help="Disable network access",
 )
 @click.argument("claude_args", nargs=-1, type=click.UNPROCESSED)
+@click.pass_context
 def jail(
-    project_dir: Path | None,
+    ctx: click.Context,
     verbose: bool,
     no_network: bool,
     claude_args: tuple[str, ...],
@@ -64,6 +98,10 @@ def jail(
         clod jail -d ~/myproject
 
         \b
+        # Use specific config file
+        clod jail -c myconfig.toml
+
+        \b
         # Pass arguments to claude
         clod jail -- --help
     """
@@ -80,15 +118,16 @@ def jail(
         click.echo("Error: claude not found in PATH", err=True)
         sys.exit(1)
 
-    # Resolve project directory
-    if project_dir is None:
-        project_dir = Path.cwd()
-    project_dir = project_dir.resolve()
+    # Get settings and project_dir from context
+    settings: ClodSettings = ctx.obj["settings"]
+    project_dir: Path = ctx.obj["project_dir"]
 
-    # Load settings
-    settings = ClodSettings()
+    # Override network setting if --no-network flag is used
     if no_network:
-        settings.enable_network = False
+        # Create a new settings object with network disabled
+        settings = ClodSettings(
+            **{**settings.model_dump(), "enable_network": False}
+        )
 
     # Get sandbox home
     sandbox_home = get_sandbox_home(project_dir, settings)
