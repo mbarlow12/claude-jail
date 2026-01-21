@@ -43,8 +43,8 @@ class SandboxSettings(BaseSettings):
     class Config:
         """Pydantic configuration."""
 
-        env_prefix = "CLOD_"
-        case_sensitive = False
+        env_prefix: str = "CLOD_"
+        case_sensitive: bool = False
 
 
 def get_sandbox_home(project_dir: Path, settings: SandboxSettings) -> Path:

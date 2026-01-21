@@ -9,7 +9,12 @@ from typing import Any
 
 
 class BwrapBuilder:
-    """Builder for constructing bubblewrap command arguments."""
+    """
+    Builder for constructing bubblewrap command arguments.
+
+    see usage of get_sandbox_home.
+
+    """
 
     def __init__(self) -> None:
         """Initialize the builder with empty argument lists."""
