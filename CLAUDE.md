@@ -8,6 +8,7 @@ claude-jail is a shell-agnostic tool that runs Claude Code inside a bubblewrap (
 
 **Core**: Pure bash library that works with any shell
 **Interfaces**: Standalone script (`bin/claude-jail`) + optional Zsh plugin wrapper
+**Python CLI**: See @clod-py/CLAUDE.md for the Python implementation (future primary interface).
 
 ## Architecture
 
@@ -154,6 +155,17 @@ claude-jail --sandbox-home /tmp --sandbox-name my-sandbox
 
 # Run only integration tests
 ./tests/run_tests.sh integration
+
+# Run a specific test file
+./tests/run_tests.sh tests/unit/bwrap.bats
+
+# Linting
+shellcheck lib/*.sh bin/claude-jail profiles/*.sh
+
+# Manual testing / debugging
+claude-jail debug              # Print bwrap command without running
+claude-jail shell              # Interactive shell inside sandbox
+claude-jail clean              # Remove .claude-sandbox directory
 ```
 
 ## Development Setup (for Claude Code Web Sessions)
