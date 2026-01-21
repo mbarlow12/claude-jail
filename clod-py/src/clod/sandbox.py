@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 
 from clod.bwrap import BwrapBuilder
-from clod.config import SandboxSettings
+from clod.config import ClodSettings
 
 
 def create_sandbox_dirs(sandbox_home: Path) -> None:
@@ -110,7 +110,7 @@ def bind_toolchain_dirs(builder: BwrapBuilder) -> None:
 
 
 def setup_environment(
-    builder: BwrapBuilder, sandbox_home: Path, settings: SandboxSettings
+    builder: BwrapBuilder, sandbox_home: Path, settings: ClodSettings
 ) -> None:
     """Set up environment variables for the sandbox.
 
@@ -167,7 +167,7 @@ def apply_dev_profile(
     builder: BwrapBuilder,
     project_dir: Path,
     sandbox_home: Path,
-    settings: SandboxSettings,
+    settings: ClodSettings,
 ) -> None:
     """Apply the dev profile configuration.
 
@@ -218,7 +218,7 @@ def apply_dev_profile(
 
 
 def initialize_sandbox(
-    project_dir: Path, sandbox_home: Path, settings: SandboxSettings
+    project_dir: Path, sandbox_home: Path, settings: ClodSettings
 ) -> BwrapBuilder:
     """Initialize the sandbox and return a configured BwrapBuilder.
 

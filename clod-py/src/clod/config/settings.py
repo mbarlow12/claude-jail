@@ -1,16 +1,26 @@
-"""Configuration settings using Pydantic.
+"""Settings for the clod sandbox environment.
 
-Placeholder for future configuration management.
+Uses Pydantic v2 BaseSettings for environment variable support.
 """
 
 from pathlib import Path
 
 from pydantic import Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class SandboxSettings(BaseSettings):
-    """Settings for the sandbox environment."""
+class ClodSettings(BaseSettings):
+    """Settings for the sandbox environment.
+
+    Settings are loaded from environment variables with the CLOD_ prefix.
+    For example, CLOD_SANDBOX_NAME sets the sandbox_name field.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="CLOD_",
+        case_sensitive=False,
+        extra="ignore",  # Ignore unknown keys in TOML files
+    )
 
     # Sandbox location
     sandbox_name: str = Field(
@@ -40,14 +50,8 @@ class SandboxSettings(BaseSettings):
         description="SHELL environment variable",
     )
 
-    class Config:
-        """Pydantic configuration."""
 
-        env_prefix: str = "CLOD_"
-        case_sensitive: bool = False
-
-
-def get_sandbox_home(project_dir: Path, settings: SandboxSettings) -> Path:
+def get_sandbox_home(project_dir: Path, settings: ClodSettings) -> Path:
     """Get the sandbox home directory path.
 
     Args:
@@ -58,3 +62,7 @@ def get_sandbox_home(project_dir: Path, settings: SandboxSettings) -> Path:
         Path to the sandbox home directory.
     """
     return project_dir / settings.sandbox_name
+
+
+# Backward compatibility alias
+SandboxSettings = ClodSettings

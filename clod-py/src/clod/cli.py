@@ -10,7 +10,7 @@ from pathlib import Path
 
 import click
 
-from clod.config import SandboxSettings, get_sandbox_home
+from clod.config import ClodSettings, get_sandbox_home
 from clod.sandbox import initialize_sandbox
 
 
@@ -86,7 +86,7 @@ def jail(
     project_dir = project_dir.resolve()
 
     # Load settings
-    settings = SandboxSettings()
+    settings = ClodSettings()
     if no_network:
         settings.enable_network = False
 
