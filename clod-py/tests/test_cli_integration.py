@@ -239,3 +239,189 @@ class TestCliVerboseOutput:
         assert "Profile: dev" in result.output
         assert str(project) in result.output
         assert ".my-custom-sandbox" in result.output
+
+
+class TestCliInitCommand:
+    """Tests for clod init command."""
+
+    def test_init_creates_config_dir_and_file(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_env: None,
+    ) -> None:
+        """Init creates config directory and config.toml with defaults."""
+        config_home = tmp_path / "clod-config"
+        monkeypatch.setenv("CLOD_CONFIG_HOME", str(config_home))
+
+        result = runner.invoke(cli, ["init", "-y"])
+
+        assert result.exit_code == 0
+        assert config_home.exists()
+        config_file = config_home / "config.toml"
+        assert config_file.exists()
+        assert "Created config file" in result.output
+
+    def test_init_defaults_written_correctly(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_env: None,
+    ) -> None:
+        """Init writes correct default values to config."""
+        config_home = tmp_path / "clod-config"
+        monkeypatch.setenv("CLOD_CONFIG_HOME", str(config_home))
+
+        runner.invoke(cli, ["init", "-y"])
+
+        config_file = config_home / "config.toml"
+        content = config_file.read_text()
+
+        assert 'sandbox_name = ".claude-sandbox"' in content
+        assert "enable_network = true" in content
+        assert 'term = "xterm-256color"' in content
+        assert 'lang = "en_US.UTF-8"' in content
+        assert 'shell = "/bin/bash"' in content
+
+    def test_init_prompts_for_existing_config(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_env: None,
+    ) -> None:
+        """Init asks for confirmation when config exists."""
+        config_home = tmp_path / "clod-config"
+        config_home.mkdir()
+        config_file = config_home / "config.toml"
+        config_file.write_text('sandbox_name = ".existing"')
+        monkeypatch.setenv("CLOD_CONFIG_HOME", str(config_home))
+
+        # Answer 'n' to overwrite prompt
+        result = runner.invoke(cli, ["init", "-y"], input="n\n")
+
+        assert result.exit_code == 0
+        assert "already exists" in result.output
+        # Original content should be preserved
+        assert ".existing" in config_file.read_text()
+
+    def test_init_force_overwrites_existing(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_env: None,
+    ) -> None:
+        """Init --force overwrites existing config without prompting."""
+        config_home = tmp_path / "clod-config"
+        config_home.mkdir()
+        config_file = config_home / "config.toml"
+        config_file.write_text('sandbox_name = ".existing"')
+        monkeypatch.setenv("CLOD_CONFIG_HOME", str(config_home))
+
+        result = runner.invoke(cli, ["init", "--force", "-y"])
+
+        assert result.exit_code == 0
+        # Should have new default value
+        assert 'sandbox_name = ".claude-sandbox"' in config_file.read_text()
+
+    def test_init_interactive_custom_values(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_env: None,
+    ) -> None:
+        """Init interactive mode allows custom values."""
+        config_home = tmp_path / "clod-config"
+        monkeypatch.setenv("CLOD_CONFIG_HOME", str(config_home))
+
+        # Provide custom values via input
+        # Order: sandbox_name, enable_network (y/n), term, lang, shell
+        user_input = ".my-sandbox\nn\nscreen-256color\nen_GB.UTF-8\n/bin/zsh\n"
+        result = runner.invoke(cli, ["init"], input=user_input)
+
+        assert result.exit_code == 0
+        config_file = config_home / "config.toml"
+        content = config_file.read_text()
+
+        assert 'sandbox_name = ".my-sandbox"' in content
+        assert "enable_network = false" in content
+        assert 'term = "screen-256color"' in content
+        assert 'lang = "en_GB.UTF-8"' in content
+        assert 'shell = "/bin/zsh"' in content
+
+    def test_init_shows_configuration_summary(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_env: None,
+    ) -> None:
+        """Init shows configuration summary after creation."""
+        config_home = tmp_path / "clod-config"
+        monkeypatch.setenv("CLOD_CONFIG_HOME", str(config_home))
+
+        result = runner.invoke(cli, ["init", "-y"])
+
+        assert "Configuration:" in result.output
+        assert "sandbox_name:" in result.output
+        assert "enable_network:" in result.output
+
+    def test_init_respects_clod_config_home(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_env: None,
+    ) -> None:
+        """Init respects CLOD_CONFIG_HOME environment variable."""
+        custom_home = tmp_path / "custom-config-home"
+        monkeypatch.setenv("CLOD_CONFIG_HOME", str(custom_home))
+
+        result = runner.invoke(cli, ["init", "-y"])
+
+        assert result.exit_code == 0
+        assert (custom_home / "config.toml").exists()
+        assert str(custom_home) in result.output
+
+    def test_init_respects_xdg_config_home(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_env: None,
+    ) -> None:
+        """Init respects XDG_CONFIG_HOME environment variable."""
+        xdg_home = tmp_path / "xdg"
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg_home))
+
+        result = runner.invoke(cli, ["init", "-y"])
+
+        assert result.exit_code == 0
+        expected_path = xdg_home / "clod" / "config.toml"
+        assert expected_path.exists()
+
+    def test_init_aborts_on_no_overwrite(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_env: None,
+    ) -> None:
+        """Init aborts when user declines to overwrite."""
+        config_home = tmp_path / "clod-config"
+        config_home.mkdir()
+        config_file = config_home / "config.toml"
+        original_content = 'sandbox_name = ".original"'
+        config_file.write_text(original_content)
+        monkeypatch.setenv("CLOD_CONFIG_HOME", str(config_home))
+
+        # Answer 'n' to overwrite
+        result = runner.invoke(cli, ["init", "-y"], input="n\n")
+
+        assert "Aborted" in result.output
+        # Original content unchanged
+        assert config_file.read_text() == original_content

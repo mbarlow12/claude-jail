@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 ```
 src/clod/
-  cli.py           # Click-based CLI - 'clod jail' command
+  cli.py           # Click-based CLI - 'clod init' and 'clod jail' commands
   bwrap.py         # BwrapBuilder class - constructs bwrap argument lists
   sandbox.py       # Sandbox initialization and dev profile logic
   config/
@@ -62,6 +62,11 @@ clod.plugin.zsh    # Zsh plugin (completions + 'cj' alias)
 ```bash
 # Install dependencies
 uv sync
+
+# Initialize user config (interactive)
+uv run clod init
+uv run clod init -y        # Accept all defaults
+uv run clod init --force   # Overwrite existing config
 
 # Run the CLI
 uv run clod jail
@@ -123,6 +128,12 @@ All settings can be overridden via environment variables with `CLOD_` prefix:
 ### CLI Options
 
 ```bash
+# Initialize user config (creates ~/.config/clod/config.toml)
+clod init              # Interactive - prompts for each setting
+clod init -y           # Accept all defaults without prompting
+clod init --force      # Overwrite existing config file
+clod init --force -y   # Overwrite with defaults, no prompts
+
 # Use specific config file (skips all discovery)
 clod -c myconfig.toml jail
 
