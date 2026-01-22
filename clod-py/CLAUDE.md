@@ -18,9 +18,9 @@ src/clod/
   config/
     __init__.py    # Public API exports
     exceptions.py  # ConfigError, DuplicateConfigError, ConfigFileNotFoundError
-    loader.py      # File discovery and loading (TOML)
-    merge.py       # deep_merge() for config dict merging
-    settings.py    # ClodSettings Pydantic model
+    loader.py      # File discovery (user/project/local config paths)
+    settings.py    # ClodSettings Pydantic model + context management
+    sources.py     # ClodTomlSettingsSource - pydantic-settings integration
 tests/
   conftest.py      # Pytest fixtures
   test_*.py        # Test modules
@@ -40,11 +40,17 @@ clod.plugin.zsh    # Zsh plugin (completions + 'cj' alias)
 - `sandbox_name` - Directory name (default: `.claude-sandbox`)
 - `enable_network` - Network access (default: `true`)
 - `term`, `lang`, `shell` - Environment variables
+- `set_config_context(project_dir, explicit_config)` - Set context before instantiation
+- Uses `settings_customise_sources()` for proper source priority
 
-**Config Loader** (`config/loader.py`): TOML configuration file discovery and loading:
-- `load_settings(project_dir, explicit_config)` - Main entry point
-- `load_all_configs()` - Discovers and merges config files
-- `discover_user_config()` / `discover_project_config()` - File discovery
+**Config Discovery** (`config/loader.py`): TOML configuration file discovery:
+- `discover_user_config()` - Find user-level config
+- `discover_project_config()` - Find project base and local configs
+- `get_config_home()` - Resolve config home directory
+
+**ClodTomlSettingsSource** (`config/sources.py`): pydantic-settings integration:
+- Discovers and deep-merges TOML configs using pydantic's `deep_update`
+- Integrates with `settings_customise_sources()` for proper priority ordering
 
 **Dev Profile** (`sandbox.py`): The `apply_dev_profile()` function implements the dev profile:
 - Unshares user, pid, uts, ipc, cgroup namespaces
