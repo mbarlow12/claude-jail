@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .sources import ClodTomlSettingsSource
+
 if TYPE_CHECKING:
     from pydantic_settings.sources import PydanticBaseSettingsSource
 
@@ -108,9 +110,6 @@ class ClodSettings(BaseSettings):
         the manual filtering hack we had before.
         """
         global _project_dir, _explicit_config
-
-        # Import here to avoid circular imports
-        from .sources import ClodTomlSettingsSource
 
         # Use current working directory as fallback if context not set
         project_dir = _project_dir if _project_dir is not None else Path.cwd()
