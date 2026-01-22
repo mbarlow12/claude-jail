@@ -1,19 +1,57 @@
 """Settings for the clod sandbox environment.
 
-Uses Pydantic v2 BaseSettings for environment variable support.
+Uses Pydantic v2 BaseSettings with custom source ordering for TOML config support.
 """
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+if TYPE_CHECKING:
+    from pydantic_settings.sources import PydanticBaseSettingsSource
+
+# Module-level state for passing context to settings_customise_sources
+_project_dir: Path | None = None
+_explicit_config: Path | None = None
+
+
+def set_config_context(project_dir: Path, explicit_config: Path | None = None) -> None:
+    """Set context for ClodSettings instantiation.
+
+    This must be called before creating a ClodSettings instance to provide
+    the project directory and optional explicit config file path for
+    TOML config discovery.
+
+    Args:
+        project_dir: The project directory for config discovery.
+        explicit_config: Explicit config file path (--config option).
+    """
+    global _project_dir, _explicit_config
+    _project_dir = project_dir
+    _explicit_config = explicit_config
+
+
+def clear_config_context() -> None:
+    """Clear the config context.
+
+    This is primarily useful for testing to ensure a clean state.
+    """
+    global _project_dir, _explicit_config
+    _project_dir = None
+    _explicit_config = None
 
 
 class ClodSettings(BaseSettings):
     """Settings for the sandbox environment.
 
-    Settings are loaded from environment variables with the CLOD_ prefix.
-    For example, CLOD_SANDBOX_NAME sets the sandbox_name field.
+    Settings are loaded from multiple sources with the following priority
+    (highest to lowest):
+    1. Constructor kwargs (init_settings)
+    2. Environment variables with CLOD_ prefix (env_settings)
+    3. TOML config files (merged from user/project/local configs)
+    4. Field defaults
     """
 
     model_config = SettingsConfigDict(
@@ -49,6 +87,41 @@ class ClodSettings(BaseSettings):
         default="/bin/bash",
         description="SHELL environment variable",
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: "PydanticBaseSettingsSource",
+        env_settings: "PydanticBaseSettingsSource",
+        dotenv_settings: "PydanticBaseSettingsSource",
+        file_secret_settings: "PydanticBaseSettingsSource",
+    ) -> tuple["PydanticBaseSettingsSource", ...]:
+        """Customize settings sources and their priority.
+
+        Priority order (first = highest):
+        1. init_settings - Constructor kwargs
+        2. env_settings - CLOD_* environment variables
+        3. toml_source - Merged TOML config files
+
+        This allows env vars to properly override TOML values without
+        the manual filtering hack we had before.
+        """
+        global _project_dir, _explicit_config
+
+        # Import here to avoid circular imports
+        from .sources import ClodTomlSettingsSource
+
+        # Use current working directory as fallback if context not set
+        project_dir = _project_dir if _project_dir is not None else Path.cwd()
+
+        toml_source = ClodTomlSettingsSource(
+            settings_cls,
+            project_dir=project_dir,
+            explicit_config=_explicit_config,
+        )
+
+        return (init_settings, env_settings, toml_source)
 
 
 def get_sandbox_home(project_dir: Path, settings: ClodSettings) -> Path:

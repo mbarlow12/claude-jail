@@ -7,7 +7,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
 
 import click
 
@@ -15,7 +14,7 @@ from clod.config import (
     ClodSettings,
     ConfigError,
     get_sandbox_home,
-    load_settings,
+    set_config_context,
 )
 from clod.sandbox import initialize_sandbox
 
@@ -48,9 +47,12 @@ def cli(ctx: click.Context, config_file: Path | None, project_dir: Path | None) 
         project_dir = Path.cwd()
     project_dir = project_dir.resolve()
 
-    # Load settings from config files
+    # Set context for pydantic-settings source discovery
+    set_config_context(project_dir, explicit_config=config_file)
+
+    # Load settings (now uses settings_customise_sources)
     try:
-        settings = load_settings(project_dir, explicit_config=config_file)
+        settings = ClodSettings()
     except ConfigError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
@@ -125,9 +127,7 @@ def jail(
     # Override network setting if --no-network flag is used
     if no_network:
         # Create a new settings object with network disabled
-        settings = ClodSettings(
-            **{**settings.model_dump(), "enable_network": False}
-        )
+        settings = ClodSettings(**{**settings.model_dump(), "enable_network": False})
 
     # Get sandbox home
     sandbox_home = get_sandbox_home(project_dir, settings)
@@ -142,7 +142,7 @@ def jail(
     # Print info if verbose
     if verbose:
         click.echo("clod")
-        click.echo(f"   Profile: dev")
+        click.echo("   Profile: dev")
         click.echo(f"   Project: {project_dir}")
         click.echo(f"   Sandbox: {sandbox_home}")
         click.echo(f"   Claude:  {shutil.which('claude')}")

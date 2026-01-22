@@ -13,29 +13,31 @@ from clod.config.loader import (
     discover_project_config,
     discover_user_config,
     get_config_home,
-    load_all_configs,
-    load_settings,
-    load_toml_file,
 )
-from clod.config.merge import deep_merge
-from clod.config.settings import ClodSettings, SandboxSettings, get_sandbox_home
+from clod.config.settings import (
+    ClodSettings,
+    SandboxSettings,
+    clear_config_context,
+    get_sandbox_home,
+    set_config_context,
+)
+from clod.config.sources import ClodTomlSettingsSource
 
 __all__ = [
     # Exceptions
     "ConfigError",
     "ConfigFileNotFoundError",
     "DuplicateConfigError",
-    # Loader
+    # Discovery (loader)
     "discover_project_config",
     "discover_user_config",
     "get_config_home",
-    "load_all_configs",
-    "load_settings",
-    "load_toml_file",
-    # Utilities
-    "deep_merge",
     # Settings
     "ClodSettings",
     "SandboxSettings",
     "get_sandbox_home",
+    "set_config_context",
+    "clear_config_context",
+    # Sources
+    "ClodTomlSettingsSource",
 ]
