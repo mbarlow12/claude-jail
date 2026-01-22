@@ -1,0 +1,26 @@
+# Example clod configuration file
+#
+# Place this file in your project directory as:
+#   - clod.toml (recommended for shared config)
+#   - .clod/config.toml (alternative location)
+#
+# For user-level settings, use:
+#   - ~/.config/clod/config.toml
+#
+# For local overrides not committed to git, use:
+#   - clod.local.toml
+#   - .clod/config.local.toml
+
+# Sandbox directory name (relative to project directory)
+# Default: ".claude-sandbox"
+sandbox_name = ".claude-sandbox"
+
+# Enable network access in the sandbox
+# Default: true
+enable_network = true
+
+# Terminal settings
+# These are passed to the sandboxed environment
+term = "xterm-256color"
+lang = "en_US.UTF-8"
+shell = "/bin/bash"
