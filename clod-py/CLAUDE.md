@@ -67,7 +67,9 @@ uv sync
 uv run clod jail
 uv run clod jail -d ~/project
 uv run clod jail --no-network
-uv run clod jail -v  # Verbose output
+uv run clod jail -v           # Verbose output
+uv run clod jail --dry-run    # Print bwrap command without running
+uv run clod jail --shell      # Interactive shell inside sandbox
 
 # Run tests
 uv run pytest tests/ -v
@@ -131,6 +133,15 @@ clod -d ~/myproject jail
 
 # Combine options
 clod -c custom.toml -d ~/project jail -v
+
+# Print bwrap command without running (for debugging)
+clod jail --dry-run
+
+# Drop into interactive shell inside sandbox (for testing)
+clod jail --shell
+
+# Combine shell and dry-run to see the shell command
+clod jail --shell --dry-run
 ```
 
 ## Current Limitations

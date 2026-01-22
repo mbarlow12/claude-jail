@@ -239,3 +239,195 @@ class TestCliVerboseOutput:
         assert "Profile: dev" in result.output
         assert str(project) in result.output
         assert ".my-custom-sandbox" in result.output
+
+
+class TestCliDryRunFlag:
+    """Tests for --dry-run flag."""
+
+    def test_dry_run_prints_command(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_env: None,
+    ) -> None:
+        """--dry-run prints the bwrap command without running."""
+        project = tmp_path / "project"
+        project.mkdir()
+
+        monkeypatch.setattr("shutil.which", lambda x: f"/usr/bin/{x}")
+
+        # Mock initialize_sandbox to return a builder with known args
+        def mock_initialize(project_dir, sandbox_home, settings):
+            from clod.bwrap import BwrapBuilder
+
+            builder = BwrapBuilder()
+            builder.bind_args.extend(["--bind", str(project_dir), str(project_dir)])
+            return builder
+
+        monkeypatch.setattr("clod.cli.initialize_sandbox", mock_initialize)
+
+        with runner.isolated_filesystem(temp_dir=tmp_path):
+            result = runner.invoke(cli, ["-d", str(project), "jail", "--dry-run"])
+
+        assert result.exit_code == 0
+        assert "bwrap" in result.output
+        assert "claude" in result.output
+        assert "# bwrap command:" in result.output
+
+    def test_dry_run_shows_verbose_info(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_env: None,
+    ) -> None:
+        """--dry-run automatically shows verbose info."""
+        project = tmp_path / "project"
+        project.mkdir()
+
+        monkeypatch.setattr("shutil.which", lambda x: f"/usr/bin/{x}")
+
+        def mock_initialize(project_dir, sandbox_home, settings):
+            from clod.bwrap import BwrapBuilder
+
+            return BwrapBuilder()
+
+        monkeypatch.setattr("clod.cli.initialize_sandbox", mock_initialize)
+
+        with runner.isolated_filesystem(temp_dir=tmp_path):
+            result = runner.invoke(cli, ["-d", str(project), "jail", "--dry-run"])
+
+        # Should show info even without -v flag
+        assert "Profile: dev" in result.output
+        assert str(project) in result.output
+
+    def test_dry_run_does_not_execute(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_env: None,
+    ) -> None:
+        """--dry-run does not actually execute subprocess.run."""
+        project = tmp_path / "project"
+        project.mkdir()
+
+        monkeypatch.setattr("shutil.which", lambda x: f"/usr/bin/{x}")
+
+        run_called = []
+
+        def mock_run(*args, **kwargs):
+            run_called.append(True)
+
+        monkeypatch.setattr("subprocess.run", mock_run)
+
+        def mock_initialize(project_dir, sandbox_home, settings):
+            from clod.bwrap import BwrapBuilder
+
+            return BwrapBuilder()
+
+        monkeypatch.setattr("clod.cli.initialize_sandbox", mock_initialize)
+
+        with runner.isolated_filesystem(temp_dir=tmp_path):
+            runner.invoke(cli, ["-d", str(project), "jail", "--dry-run"])
+
+        assert len(run_called) == 0
+
+
+class TestCliShellFlag:
+    """Tests for --shell flag."""
+
+    def test_shell_does_not_require_claude(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_env: None,
+    ) -> None:
+        """--shell mode does not require claude to be installed."""
+        project = tmp_path / "project"
+        project.mkdir()
+
+        def mock_which(cmd):
+            if cmd == "bwrap":
+                return "/usr/bin/bwrap"
+            if cmd == "claude":
+                return None  # claude not found
+            return f"/usr/bin/{cmd}"
+
+        monkeypatch.setattr("shutil.which", mock_which)
+
+        def mock_initialize(project_dir, sandbox_home, settings):
+            from clod.bwrap import BwrapBuilder
+
+            return BwrapBuilder()
+
+        monkeypatch.setattr("clod.cli.initialize_sandbox", mock_initialize)
+        monkeypatch.setattr("subprocess.run", lambda *a, **kw: None)
+
+        with runner.isolated_filesystem(temp_dir=tmp_path):
+            result = runner.invoke(cli, ["-d", str(project), "jail", "--shell"])
+
+        # Should not fail with "claude not found"
+        assert "claude not found" not in result.output
+
+    def test_shell_uses_shell_from_settings(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_env: None,
+    ) -> None:
+        """--shell mode uses shell from settings."""
+        project = tmp_path / "project"
+        project.mkdir()
+
+        config = project / "clod.toml"
+        config.write_text('shell = "/bin/zsh"')
+
+        monkeypatch.setattr("shutil.which", lambda x: f"/usr/bin/{x}")
+
+        def mock_initialize(project_dir, sandbox_home, settings):
+            from clod.bwrap import BwrapBuilder
+
+            return BwrapBuilder()
+
+        monkeypatch.setattr("clod.cli.initialize_sandbox", mock_initialize)
+
+        with runner.isolated_filesystem(temp_dir=tmp_path):
+            result = runner.invoke(
+                cli, ["-d", str(project), "jail", "--shell", "--dry-run"]
+            )
+
+        # Command should contain the shell, not claude
+        assert "/bin/zsh" in result.output
+        assert "claude" not in result.output.split("# bwrap command:")[-1]
+
+    def test_shell_verbose_shows_shell_path(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        clean_env: None,
+    ) -> None:
+        """--shell -v shows shell path instead of claude path."""
+        project = tmp_path / "project"
+        project.mkdir()
+
+        monkeypatch.setattr("shutil.which", lambda x: f"/usr/bin/{x}")
+
+        def mock_initialize(project_dir, sandbox_home, settings):
+            from clod.bwrap import BwrapBuilder
+
+            return BwrapBuilder()
+
+        monkeypatch.setattr("clod.cli.initialize_sandbox", mock_initialize)
+
+        with runner.isolated_filesystem(temp_dir=tmp_path):
+            result = runner.invoke(
+                cli, ["-d", str(project), "jail", "--shell", "--dry-run"]
+            )
+
+        assert "Shell:" in result.output
+        assert "Claude:" not in result.output

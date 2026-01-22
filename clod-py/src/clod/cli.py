@@ -3,6 +3,7 @@
 Provides the 'clod jail' command to run Claude in a bubblewrap sandbox.
 """
 
+import shlex
 import shutil
 import subprocess
 import sys
@@ -75,12 +76,24 @@ def cli(ctx: click.Context, config_file: Path | None, project_dir: Path | None) 
     is_flag=True,
     help="Disable network access",
 )
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Print the bwrap command without executing it",
+)
+@click.option(
+    "--shell",
+    is_flag=True,
+    help="Drop into an interactive shell instead of running claude",
+)
 @click.argument("claude_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
 def jail(
     ctx: click.Context,
     verbose: bool,
     no_network: bool,
+    dry_run: bool,
+    shell: bool,
     claude_args: tuple[str, ...],
 ) -> None:
     """Run Claude Code in a bubblewrap sandbox.
@@ -106,6 +119,14 @@ def jail(
         \b
         # Pass arguments to claude
         clod jail -- --help
+
+        \b
+        # Print bwrap command without running
+        clod jail --dry-run
+
+        \b
+        # Drop into interactive shell inside sandbox
+        clod jail --shell
     """
     # Check for bubblewrap
     if not shutil.which("bwrap"):
@@ -115,8 +136,8 @@ def jail(
         )
         sys.exit(1)
 
-    # Check for claude
-    if not shutil.which("claude"):
+    # Check for claude (not required for --shell mode)
+    if not shell and not shutil.which("claude"):
         click.echo("Error: claude not found in PATH", err=True)
         sys.exit(1)
 
@@ -139,20 +160,35 @@ def jail(
     if not settings.enable_network:
         builder.unshare("net")
 
-    # Print info if verbose
-    if verbose:
+    # Determine the command to run inside sandbox
+    if shell:
+        inner_cmd = [settings.shell]
+    else:
+        inner_cmd = ["claude"]
+        if claude_args:
+            inner_cmd.extend(claude_args)
+
+    # Print info if verbose or dry-run
+    if verbose or dry_run:
         click.echo("clod")
         click.echo("   Profile: dev")
         click.echo(f"   Project: {project_dir}")
         click.echo(f"   Sandbox: {sandbox_home}")
-        click.echo(f"   Claude:  {shutil.which('claude')}")
+        if shell:
+            click.echo(f"   Shell:   {settings.shell}")
+        else:
+            click.echo(f"   Claude:  {shutil.which('claude')}")
         click.echo()
 
     # Build command
     cmd = builder.build()
-    cmd.extend(["--", "claude"])
-    if claude_args:
-        cmd.extend(claude_args)
+    cmd.extend(["--"] + inner_cmd)
+
+    # Handle dry-run: print command and exit
+    if dry_run:
+        click.echo("# bwrap command:")
+        click.echo(shlex.join(cmd))
+        return
 
     # Run the command
     try:
