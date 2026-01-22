@@ -5,7 +5,6 @@ Provides primitives for constructing bwrap argument lists.
 
 import os
 from pathlib import Path
-from typing import Any
 
 
 class BwrapBuilder:

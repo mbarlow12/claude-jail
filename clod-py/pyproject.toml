@@ -19,6 +19,7 @@ clod = "clod.cli:cli"
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
+    "ruff>=0.14.13",
 ]
 
 [build-system]

@@ -194,7 +194,6 @@ class TestCliNoNetworkFlag:
 
         # Track if unshare("net") is called
         unshare_calls: list[str] = []
-        original_init = None
 
         def mock_initialize(project_dir, sandbox_home, settings):
             class MockBuilder:
@@ -210,7 +209,7 @@ class TestCliNoNetworkFlag:
         monkeypatch.setattr("clod.cli.initialize_sandbox", mock_initialize)
 
         with runner.isolated_filesystem(temp_dir=tmp_path):
-            result = runner.invoke(cli, ["-d", str(project), "jail", "--no-network"])
+            runner.invoke(cli, ["-d", str(project), "jail", "--no-network"])
 
         assert "net" in unshare_calls
 
